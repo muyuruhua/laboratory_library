@@ -87,7 +87,7 @@ typedef struct {
 } mab_selector_t;
 
 /* Lattice-MAB Context */
-typedef struct {
+struct lattice_mab_context {
 
   mutation_lattice_t lattice;
   mab_selector_t mab;
@@ -99,7 +99,13 @@ typedef struct {
   u64 original_selections;
   u64 total_mutations;
   
-} lattice_mab_context_t;
+};
+
+/* Only define typedef if not already defined in afl-fuzz.h */
+#ifndef LATTICE_MAB_CONTEXT_TYPEDEF_DEFINED
+#define LATTICE_MAB_CONTEXT_TYPEDEF_DEFINED
+typedef struct lattice_mab_context lattice_mab_context_t;
+#endif
 
 /* Function declarations */
 

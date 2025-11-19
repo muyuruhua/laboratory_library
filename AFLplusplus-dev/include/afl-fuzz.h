@@ -500,6 +500,11 @@ struct foreign_sync {
 
 };
 
+/* Forward declaration for Lattice-MAB context */
+struct lattice_mab_context;
+#define LATTICE_MAB_CONTEXT_TYPEDEF_DEFINED
+typedef struct lattice_mab_context lattice_mab_context_t;
+
 typedef struct afl_state {
 
   /* Position of this state in the global states list */
