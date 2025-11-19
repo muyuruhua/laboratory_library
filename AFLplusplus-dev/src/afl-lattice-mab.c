@@ -5,12 +5,53 @@
 
 /* Include afl-fuzz.h first to get all necessary definitions */
 #include "afl-fuzz.h"
-/* Include afl-mutations.h to get MUT_* constants */
-#include "afl-mutations.h"
 /* Then include our header */
 #include "afl-lattice-mab.h"
 #include <string.h>
 #include <stdlib.h>
+
+/* Define MUT_* constants locally to avoid including afl-mutations.h
+   which contains global variable definitions that cause duplicate symbols */
+#ifndef MUT_FLIPBIT
+#define MUT_FLIPBIT 0
+#define MUT_INTERESTING8 1
+#define MUT_INTERESTING16 2
+#define MUT_INTERESTING16BE 3
+#define MUT_INTERESTING32 4
+#define MUT_INTERESTING32BE 5
+#define MUT_ARITH8_ 6
+#define MUT_ARITH8 7
+#define MUT_ARITH16_ 8
+#define MUT_ARITH16BE_ 9
+#define MUT_ARITH16 10
+#define MUT_ARITH16BE 11
+#define MUT_ARITH32_ 12
+#define MUT_ARITH32BE_ 13
+#define MUT_ARITH32 14
+#define MUT_ARITH32BE 15
+#define MUT_RAND8 16
+#define MUT_CLONE_COPY 17
+#define MUT_CLONE_FIXED 18
+#define MUT_OVERWRITE_COPY 19
+#define MUT_OVERWRITE_FIXED 20
+#define MUT_BYTEADD 21
+#define MUT_BYTESUB 22
+#define MUT_FLIP8 23
+#define MUT_SWITCH 24
+#define MUT_DEL 25
+#define MUT_SHUFFLE 26
+#define MUT_DELONE 27
+#define MUT_INSERTONE 28
+#define MUT_ASCIINUM 29
+#define MUT_INSERTASCIINUM 30
+#define MUT_EXTRA_OVERWRITE 31
+#define MUT_EXTRA_INSERT 32
+#define MUT_AUTO_EXTRA_OVERWRITE 33
+#define MUT_AUTO_EXTRA_INSERT 34
+#define MUT_SPLICE_OVERWRITE 35
+#define MUT_SPLICE_INSERT 36
+#define MUT_MAX 37
+#endif
 
 /* Initialize mutation vector from mutation type */
 mutation_vector_t create_mutation_vector(u32 mutation_type) {

@@ -24,12 +24,17 @@
  */
 
 #include "afl-fuzz.h"
-#include "afl-mutations.h"
 #include "afl-lattice-mab.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "asanfuzz.h"
+
+/* Define MUT_MAX locally to avoid including afl-mutations.h
+   which contains global variable definitions that cause duplicate symbols */
+#ifndef MUT_MAX
+#define MUT_MAX 37
+#endif
 
 u16 count_class_lookup16[65536];
 

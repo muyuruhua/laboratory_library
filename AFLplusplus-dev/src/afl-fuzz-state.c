@@ -26,9 +26,14 @@
 #include <signal.h>
 #include <limits.h>
 #include "afl-fuzz.h"
-#include "afl-mutations.h"
 #include "afl-lattice-mab.h"
 #include "envs.h"
+
+/* Define MUT_FLIPBIT locally to avoid including afl-mutations.h
+   which contains global variable definitions that cause duplicate symbols */
+#ifndef MUT_FLIPBIT
+#define MUT_FLIPBIT 0
+#endif
 
 char *power_names[POWER_SCHEDULES_NUM] = {"explore", "mmopt", "exploit",
                                           "fast",    "coe",   "lin",
