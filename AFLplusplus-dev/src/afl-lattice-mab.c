@@ -367,6 +367,7 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
 double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
                                 u32 new_edges, u32 new_paths) {
 
+  (void)mutation_type;  /* Suppress unused parameter warning */
   if (!afl) { return 0.0; }
   
   /* Base reward from new coverage */
@@ -390,6 +391,8 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
 u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
                                u32 input_mode, u32 fuzz_mode) {
 
+  (void)input_mode;  /* Suppress unused parameter warning */
+  (void)fuzz_mode;   /* Suppress unused parameter warning */
   if (!ctx || !afl || !ctx->enabled) {
     
     /* Fallback to original strategy */

@@ -26,6 +26,7 @@
 #include <signal.h>
 #include <limits.h>
 #include "afl-fuzz.h"
+#include "afl-mutations.h"
 #include "afl-lattice-mab.h"
 #include "envs.h"
 

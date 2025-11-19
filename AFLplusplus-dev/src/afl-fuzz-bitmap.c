@@ -24,6 +24,7 @@
  */
 
 #include "afl-fuzz.h"
+#include "afl-mutations.h"
 #include "afl-lattice-mab.h"
 #include <limits.h>
 #include <stdio.h>
