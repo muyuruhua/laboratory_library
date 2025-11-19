@@ -1,0 +1,7 @@
+strategy,run,execs,edges,crashes,paths,cycles,exec_timeout,paths_favored,paths_imported
+original,1,0,0,0,0,0,0,0,0
+lattice_mab,1,0,0,0,0,0,0,0,0
+original,2,0,0,0,0,0,0,0,0
+lattice_mab,2,0,0,0,0,0,0,0,0
+original,3,0,0,0,0,0,0,0,0
+lattice_mab,3,0,0,0,0,0,0,0,0

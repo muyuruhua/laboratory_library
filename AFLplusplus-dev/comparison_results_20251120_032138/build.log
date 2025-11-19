@@ -1,0 +1,5 @@
+[1;93m[!] [1;97mWARNING: [0mYou are using outdated instrumentation, install LLVM and/or gcc-plugin and use afl-clang-fast/afl-clang-lto/afl-gcc-fast instead![0m
+[?25h[0m[1;91m
+[-] PROGRAM ABORT : [0mCannot find 'afl-as'.[1;91m
+         Location : [0madd_assembler(), src/afl-cc.c:2615
+
