@@ -74,12 +74,26 @@ echo "A" > "$TESTCASES_DIR/input4.txt"
 echo -e "${GREEN}测试用例创建完成！${NC}"
 echo ""
 
+# 函数：查找fuzzer_stats文件
+find_fuzzer_stats() {
+    local output_dir=$1
+    # 尝试多个可能的位置
+    if [ -f "$output_dir/fuzzer_stats" ]; then
+        echo "$output_dir/fuzzer_stats"
+    elif [ -f "$output_dir/default/fuzzer_stats" ]; then
+        echo "$output_dir/default/fuzzer_stats"
+    else
+        # 搜索所有子目录
+        find "$output_dir" -name "fuzzer_stats" -type f 2>/dev/null | head -1
+    fi
+}
+
 # 函数：提取统计信息
 extract_stats() {
     local output_dir=$1
-    local stats_file="$output_dir/fuzzer_stats"
+    local stats_file=$(find_fuzzer_stats "$output_dir")
     
-    if [ ! -f "$stats_file" ]; then
+    if [ -z "$stats_file" ] || [ ! -f "$stats_file" ]; then
         echo "0,0,0,0,0,0,0,0"
         return
     fi
@@ -128,8 +142,9 @@ run_test() {
     echo "$strategy_name,$run_num,$stats" >> "$RESULTS_DIR/results.csv"
     
     # 复制fuzzer_stats用于分析
-    if [ -f "$output_dir/fuzzer_stats" ]; then
-        cp "$output_dir/fuzzer_stats" "$output_dir/fuzzer_stats_final"
+    local stats_file=$(find_fuzzer_stats "$output_dir")
+    if [ -n "$stats_file" ] && [ -f "$stats_file" ]; then
+        cp "$stats_file" "$output_dir/fuzzer_stats_final"
     fi
     
     echo -e "${GREEN}✓ 完成: $strategy_name (运行 #$run_num)${NC}"

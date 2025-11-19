@@ -2,7 +2,7 @@
 
 # 快速测试脚本 - 用于验证Lattice-MAB策略是否正常工作
 
-set -e
+# 不设置set -e，因为timeout命令在超时后会返回非零退出码
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build_quick_test"
@@ -47,39 +47,91 @@ echo "1" > "$TESTCASES_DIR/input2.txt"
 echo "✓ 测试用例创建完成"
 echo ""
 
+# 函数：查找fuzzer_stats文件
+find_fuzzer_stats() {
+    local output_dir=$1
+    # 尝试多个可能的位置
+    if [ -f "$output_dir/fuzzer_stats" ]; then
+        echo "$output_dir/fuzzer_stats"
+    elif [ -f "$output_dir/default/fuzzer_stats" ]; then
+        echo "$output_dir/default/fuzzer_stats"
+    else
+        # 搜索所有子目录
+        find "$output_dir" -name "fuzzer_stats" -type f 2>/dev/null | head -1
+    fi
+}
+
 # 测试原有策略
 echo "[3/3] 运行测试（30秒）..."
 echo ""
 echo "--- 测试原有策略 ---"
 export AFL_LATTICE_MAB=0
 export AFL_SKIP_CPUFREQ=1
-timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_original" -m none -- "$BUILD_DIR/test-instr" @@ > /dev/null 2>&1 || true
+export AFL_QUIET=1  # 减少输出
 
-if [ -f "$BUILD_DIR/output_original/fuzzer_stats" ]; then
-    execs=$(grep "^execs_done" "$BUILD_DIR/output_original/fuzzer_stats" | awk '{print $3}' || echo "0")
-    edges=$(grep "^edges_found" "$BUILD_DIR/output_original/fuzzer_stats" | awk '{print $3}' || echo "0")
-    paths=$(grep "^paths_total" "$BUILD_DIR/output_original/fuzzer_stats" | awk '{print $3}' || echo "0")
+# 运行afl-fuzz并保存日志
+timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_original" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/original.log" 2>&1 || true
+
+# 等待文件写入
+sleep 2
+
+# 查找统计文件
+STATS_FILE=$(find_fuzzer_stats "$BUILD_DIR/output_original")
+
+if [ -n "$STATS_FILE" ] && [ -f "$STATS_FILE" ]; then
+    execs=$(grep "^execs_done" "$STATS_FILE" | awk '{print $3}' || echo "0")
+    edges=$(grep "^edges_found" "$STATS_FILE" | awk '{print $3}' || echo "0")
+    paths=$(grep "^paths_total" "$STATS_FILE" | awk '{print $3}' || echo "0")
     echo "原有策略: execs=$execs, edges=$edges, paths=$paths"
+    echo "  统计文件: $STATS_FILE"
 else
     echo "警告: 无法读取原有策略的统计信息"
+    echo "  输出目录内容:"
+    ls -la "$BUILD_DIR/output_original" 2>/dev/null || echo "    输出目录不存在"
+    if [ -d "$BUILD_DIR/output_original" ]; then
+        find "$BUILD_DIR/output_original" -type f -name "*stats*" 2>/dev/null | head -5
+    fi
+    echo "  最后10行日志:"
+    tail -10 "$BUILD_DIR/original.log" 2>/dev/null || echo "    日志文件不存在"
 fi
 
 echo ""
 echo "--- 测试新策略 (Lattice-MAB) ---"
 export AFL_LATTICE_MAB=1
-timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_lattice_mab" -m none -- "$BUILD_DIR/test-instr" @@ > /dev/null 2>&1 || true
 
-if [ -f "$BUILD_DIR/output_lattice_mab/fuzzer_stats" ]; then
-    execs=$(grep "^execs_done" "$BUILD_DIR/output_lattice_mab/fuzzer_stats" | awk '{print $3}' || echo "0")
-    edges=$(grep "^edges_found" "$BUILD_DIR/output_lattice_mab/fuzzer_stats" | awk '{print $3}' || echo "0")
-    paths=$(grep "^paths_total" "$BUILD_DIR/output_lattice_mab/fuzzer_stats" | awk '{print $3}' || echo "0")
+# 运行afl-fuzz并保存日志
+timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_lattice_mab" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/lattice_mab.log" 2>&1 || true
+
+# 等待文件写入
+sleep 2
+
+# 查找统计文件
+STATS_FILE=$(find_fuzzer_stats "$BUILD_DIR/output_lattice_mab")
+
+if [ -n "$STATS_FILE" ] && [ -f "$STATS_FILE" ]; then
+    execs=$(grep "^execs_done" "$STATS_FILE" | awk '{print $3}' || echo "0")
+    edges=$(grep "^edges_found" "$STATS_FILE" | awk '{print $3}' || echo "0")
+    paths=$(grep "^paths_total" "$STATS_FILE" | awk '{print $3}' || echo "0")
     echo "新策略: execs=$execs, edges=$edges, paths=$paths"
+    echo "  统计文件: $STATS_FILE"
 else
     echo "警告: 无法读取新策略的统计信息"
+    echo "  输出目录内容:"
+    ls -la "$BUILD_DIR/output_lattice_mab" 2>/dev/null || echo "    输出目录不存在"
+    if [ -d "$BUILD_DIR/output_lattice_mab" ]; then
+        find "$BUILD_DIR/output_lattice_mab" -type f -name "*stats*" 2>/dev/null | head -5
+    fi
+    echo "  最后10行日志:"
+    tail -10 "$BUILD_DIR/lattice_mab.log" 2>/dev/null || echo "    日志文件不存在"
 fi
 
 echo ""
 echo "✓ 快速测试完成！"
+echo ""
+echo "调试信息:"
+echo "  - 原有策略日志: $BUILD_DIR/original.log"
+echo "  - 新策略日志: $BUILD_DIR/lattice_mab.log"
+echo "  - 输出目录: $BUILD_DIR/output_*"
 echo ""
 echo "如需运行完整对比测试，请使用: ./test_lattice_mab.sh"
 
