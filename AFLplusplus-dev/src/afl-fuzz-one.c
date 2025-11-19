@@ -29,6 +29,7 @@
 #include <limits.h>
 #include "cmplog.h"
 #include "afl-mutations.h"
+#include "afl-lattice-mab.h"
 
 /* MOpt */
 

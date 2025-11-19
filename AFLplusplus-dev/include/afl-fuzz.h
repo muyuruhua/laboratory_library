@@ -1517,6 +1517,3 @@ static inline u8 bitmap_read(u8 *map, u32 index) {
 
 #endif
 
-/* Include lattice-MAB header after afl_state_t is defined */
-#include "afl-lattice-mab.h"
-

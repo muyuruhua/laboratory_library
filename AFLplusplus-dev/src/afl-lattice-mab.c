@@ -3,8 +3,12 @@
    -----------------------------------------------------------------------
 */
 
-#include "afl-lattice-mab.h"
+/* Include afl-fuzz.h first to get all necessary definitions */
 #include "afl-fuzz.h"
+/* Include afl-mutations.h to get MUT_* constants */
+#include "afl-mutations.h"
+/* Then include our header */
+#include "afl-lattice-mab.h"
 #include <string.h>
 #include <stdlib.h>
 

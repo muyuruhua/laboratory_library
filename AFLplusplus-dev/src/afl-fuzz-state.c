@@ -26,6 +26,7 @@
 #include <signal.h>
 #include <limits.h>
 #include "afl-fuzz.h"
+#include "afl-lattice-mab.h"
 #include "envs.h"
 
 char *power_names[POWER_SCHEDULES_NUM] = {"explore", "mmopt", "exploit",

@@ -17,7 +17,6 @@
 #ifndef AFL_LATTICE_MAB_H
 #define AFL_LATTICE_MAB_H
 
-#include "afl-mutations.h"
 #include "types.h"
 #include <stdbool.h>
 #include <math.h>
@@ -28,6 +27,8 @@ struct afl_state;
 typedef struct afl_state afl_state_t;
 
 /* Configuration */
+/* Note: MUT_MAX is defined in afl-mutations.h, but we avoid including it here
+   to prevent circular dependencies. The value 37 matches MUT_MAX. */
 #define LATTICE_DIMENSION 37  /* Number of mutation types (MUT_MAX) */
 #define MAB_ALPHA 0.1         /* UCB exploration parameter */
 #define MAB_EPSILON 0.1      /* Epsilon-greedy parameter */
