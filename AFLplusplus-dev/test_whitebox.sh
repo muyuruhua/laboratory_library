@@ -128,6 +128,14 @@ echo "1 1" > "$TESTCASES_DIR/input2.txt"
 echo "-1 -1" > "$TESTCASES_DIR/input3.txt"
 echo "10 20" > "$TESTCASES_DIR/input4.txt"
 echo -e "${GREEN}✓ 测试用例创建完成${NC}"
+
+# 验证程序是否能正常运行
+echo "  验证程序是否能正常运行..."
+if echo "1 2" | "$TARGET_BINARY" >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✓ 程序可以正常运行${NC}"
+else
+    echo -e "  ${YELLOW}警告: 程序可能无法正常运行，但继续测试...${NC}"
+fi
 echo ""
 
 # 函数：查找 fuzzer_stats 文件
@@ -187,10 +195,30 @@ run_fuzz_test() {
     # 注意：test-whiteBox.c 从标准输入读取，AFL++ 会自动将测试用例文件内容传递给标准输入
     echo "  运行时间: ${TEST_TIME}秒..."
     export AFL_SKIP_CPUFREQ=1
-    export AFL_QUIET=1  # 减少输出
+    # 不设置 AFL_QUIET，以便看到更多调试信息
+    # export AFL_QUIET=1
+    
+    # 先测试程序是否能被 AFL++ 执行
+    echo "  测试程序执行..."
+    if ! echo "1 2" | timeout 2s "$TARGET_BINARY" >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}警告: 程序可能无法正常执行${NC}"
+    fi
+    
+    # 运行 afl-fuzz（前台运行以便看到输出）
     timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -m none \
         -- "$TARGET_BINARY" > "$RESULTS_DIR/${strategy_name}.log" 2>&1 &
     local fuzz_pid=$!
+    
+    # 等待几秒，检查是否正常启动
+    sleep 3
+    if ! kill -0 $fuzz_pid 2>/dev/null; then
+        echo -e "  ${RED}错误: afl-fuzz 进程已退出${NC}"
+        if [ -f "$RESULTS_DIR/${strategy_name}.log" ]; then
+            echo "  错误日志:"
+            tail -30 "$RESULTS_DIR/${strategy_name}.log" | sed 's/^/    /'
+        fi
+        return 1
+    fi
     
     # 等待完成
     wait $fuzz_pid
@@ -214,7 +242,18 @@ run_fuzz_test() {
     else
         echo -e "  ${YELLOW}警告: 无法读取统计信息${NC}"
         echo "  输出目录内容:"
-        ls -la "$output_dir" | head -10
+        ls -la "$output_dir" 2>/dev/null | head -10 || echo "    目录不存在或为空"
+        
+        # 检查日志文件中的错误
+        if [ -f "$RESULTS_DIR/${strategy_name}.log" ]; then
+            echo "  日志文件最后20行:"
+            tail -20 "$RESULTS_DIR/${strategy_name}.log" | sed 's/^/    /'
+        fi
+        
+        # 尝试查找任何输出目录
+        echo "  搜索所有可能的输出目录:"
+        find "$output_dir" -type d 2>/dev/null | head -5 | sed 's/^/    /'
+        find "$output_dir" -name "fuzzer_stats" 2>/dev/null | head -5 | sed 's/^/    /'
     fi
     
     echo ""
