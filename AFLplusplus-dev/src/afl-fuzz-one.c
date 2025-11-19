@@ -2230,9 +2230,40 @@ havoc_stage:
 
     retry_havoc_step: {
 
-      u32 r = rand_below(afl, rand_max), item;
+      u32 r, item;
+      u32 selected_mutation;
+      
+      /* Try to use lattice-MAB strategy if enabled */
+      if (afl->lattice_mab_ctx && afl->lattice_mab_ctx->enabled) {
+        
+        selected_mutation = lattice_mab_select_mutation(afl->lattice_mab_ctx, afl,
+                                                       afl->input_mode, afl->fuzz_mode);
+        
+        /* If lattice-MAB returned 0, fallback to original strategy */
+        if (selected_mutation == 0 || selected_mutation >= MUT_MAX) {
+          
+          r = rand_below(afl, rand_max);
+          selected_mutation = mutation_array[r];
+          
+        } else {
+          
+          /* Use lattice-MAB selected mutation */
+          r = selected_mutation;  /* For compatibility with switch statement */
+          
+        }
+        
+      } else {
+        
+        /* Original strategy */
+        r = rand_below(afl, rand_max);
+        selected_mutation = mutation_array[r];
+        
+      }
+      
+      /* Save current mutation type for feedback */
+      afl->current_mutation_type = selected_mutation;
 
-      switch (mutation_array[r]) {
+      switch (selected_mutation) {
 
         case MUT_FLIPBIT: {
 

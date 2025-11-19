@@ -132,6 +132,25 @@ void afl_state_init(afl_state_t *afl, uint32_t map_size) {
   afl->ijon_input_len = 0;
   afl->is_doing_ijon = 0;
 
+  /* Initialize Lattice-MAB mutation strategy */
+  afl->lattice_mab_ctx = (lattice_mab_context_t *)ck_alloc(sizeof(lattice_mab_context_t));
+  if (afl->lattice_mab_ctx) {
+    
+    lattice_mab_init(afl->lattice_mab_ctx, afl);
+    /* Enable by default, can be controlled via environment variable */
+    if (getenv("AFL_LATTICE_MAB")) {
+      
+      afl->lattice_mab_ctx->enabled = (atoi(getenv("AFL_LATTICE_MAB")) != 0);
+      
+    } else {
+      
+      afl->lattice_mab_ctx->enabled = 1;  /* Enabled by default */
+      
+    }
+    
+  }
+  afl->current_mutation_type = MUT_FLIPBIT;  /* Default mutation type */
+
   afl->fsrv.use_stdin = 1;
   afl->fsrv.map_size = map_size;
   // afl_state_t is not available in forkserver.c

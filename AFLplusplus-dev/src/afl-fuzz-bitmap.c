@@ -678,6 +678,18 @@ u8 __attribute__((hot)) save_if_interesting(afl_state_t *afl, void *mem,
        future fuzzing, etc. */
     calculate_new_bits_if_necessary(afl, &new_bits, &bits_counted, &classified);
 
+    /* Update lattice-MAB feedback if enabled */
+    if (afl->lattice_mab_ctx && afl->lattice_mab_ctx->enabled &&
+        afl->current_mutation_type < MUT_MAX) {
+      
+      u32 new_edges = (new_bits == 2) ? 1 : 0;  /* Simplified: 1 if new coverage */
+      u32 new_paths = (new_bits == 2) ? 1 : 0;
+      double reward = calculate_mutation_reward(afl, afl->current_mutation_type,
+                                                new_edges, new_paths);
+      lattice_mab_update(afl->lattice_mab_ctx, afl->current_mutation_type, reward);
+      
+    }
+
     if (likely(!new_bits)) {
 
       if (san_fault == FSRV_RUN_OK) {

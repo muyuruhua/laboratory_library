@@ -899,6 +899,10 @@ typedef struct afl_state {
   dynamic_shared_access_t
       *ijon_shared_access;         /* IJON shared access for dynamic offset */
 
+  /* Lattice-based Multi-Armed Bandit mutation strategy */
+  lattice_mab_context_t *lattice_mab_ctx;
+  u32 current_mutation_type;  /* Current mutation type being used (for feedback) */
+
 } afl_state_t;
 
 struct custom_mutator {
@@ -1507,4 +1511,7 @@ static inline u8 bitmap_read(u8 *map, u32 index) {
 #endif
 
 #endif
+
+/* Include lattice-MAB header after afl_state_t is defined */
+#include "afl-lattice-mab.h"
 
