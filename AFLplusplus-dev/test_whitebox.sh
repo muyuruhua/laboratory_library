@@ -194,9 +194,13 @@ run_fuzz_test() {
     # 运行 afl-fuzz
     # 注意：test-whiteBox.c 从标准输入读取，AFL++ 会自动将测试用例文件内容传递给标准输入
     echo "  运行时间: ${TEST_TIME}秒..."
+    
+    # 设置 AFL++ 环境变量
     export AFL_SKIP_CPUFREQ=1
-    # 不设置 AFL_QUIET，以便看到更多调试信息
-    # export AFL_QUIET=1
+    # 允许在 core_pattern 配置不理想的情况下运行（用于测试环境）
+    export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+    # 减少输出（可选，如果需要更多调试信息可以注释掉）
+    export AFL_QUIET=1
     
     # 先测试程序是否能被 AFL++ 执行
     echo "  测试程序执行..."
