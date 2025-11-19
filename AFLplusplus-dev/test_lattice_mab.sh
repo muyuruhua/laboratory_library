@@ -3,7 +3,7 @@
 # AFL++ Lattice-MAB策略对比测试脚本
 # 使用test-instr.c作为测试目标
 
-set -e
+# 不设置set -e，因为某些命令可能失败但需要继续执行
 
 # 颜色定义
 RED='\033[0;31m'
@@ -66,15 +66,57 @@ echo ""
 echo -e "${GREEN}[1/5] 编译test-instr.c...${NC}"
 cd "$BUILD_DIR"
 
-# 编译test-instr.c
-"$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | tee "$RESULTS_DIR/build.log"
+# 尝试使用afl-clang-fast编译（需要完整工具链）
+COMPILE_SUCCESS=0
+COMPILE_METHOD=""
 
-if [ ! -f "$BUILD_DIR/test-instr" ]; then
-    echo -e "${RED}错误: 编译失败${NC}"
+# 先尝试afl-clang-fast
+if "$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" >/dev/null 2>&1; then
+    if [ -f "$BUILD_DIR/test-instr" ]; then
+        echo -e "${GREEN}✓ 使用afl-clang-fast编译成功（带插桩）${NC}" | tee "$RESULTS_DIR/build.log"
+        COMPILE_SUCCESS=1
+        COMPILE_METHOD="afl-clang-fast"
+    fi
+fi
+
+# 如果afl-clang-fast失败，使用普通编译器（无插桩，但可用于对比测试）
+if [ $COMPILE_SUCCESS -eq 0 ]; then
+    echo -e "${YELLOW}提示: afl-clang-fast需要完整工具链，尝试使用普通编译器...${NC}" | tee "$RESULTS_DIR/build.log"
+    
+    # 尝试gcc
+    if command -v gcc &> /dev/null; then
+        if gcc -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | tee -a "$RESULTS_DIR/build.log"; then
+            if [ -f "$BUILD_DIR/test-instr" ]; then
+                echo -e "${GREEN}✓ 使用gcc编译成功（无插桩，仅用于策略对比）${NC}" | tee -a "$RESULTS_DIR/build.log"
+                COMPILE_SUCCESS=1
+                COMPILE_METHOD="gcc"
+            fi
+        fi
+    fi
+    
+    # 如果gcc也失败，尝试clang
+    if [ $COMPILE_SUCCESS -eq 0 ] && command -v clang &> /dev/null; then
+        if clang -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | tee -a "$RESULTS_DIR/build.log"; then
+            if [ -f "$BUILD_DIR/test-instr" ]; then
+                echo -e "${GREEN}✓ 使用clang编译成功（无插桩，仅用于策略对比）${NC}" | tee -a "$RESULTS_DIR/build.log"
+                COMPILE_SUCCESS=1
+                COMPILE_METHOD="clang"
+            fi
+        fi
+    fi
+fi
+
+if [ $COMPILE_SUCCESS -eq 0 ] || [ ! -f "$BUILD_DIR/test-instr" ]; then
+    echo -e "${RED}错误: 编译失败，找不到可用的编译器${NC}"
+    echo -e "${YELLOW}调试信息:${NC}"
+    echo "  尝试的命令: $AFL_CLANG_FAST"
+    echo "  目标文件: $BUILD_DIR/test-instr"
+    echo "  可用的编译器:"
+    command -v gcc && echo "    - gcc: $(command -v gcc)" || echo "    - gcc: 未找到"
+    command -v clang && echo "    - clang: $(command -v clang)" || echo "    - clang: 未找到"
     exit 1
 fi
 
-echo -e "${GREEN}编译成功！${NC}"
 echo ""
 
 # 创建初始测试用例

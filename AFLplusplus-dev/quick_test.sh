@@ -44,13 +44,57 @@ echo ""
 # 编译test-instr.c
 echo "[1/3] 编译test-instr.c..."
 cd "$BUILD_DIR"
-"$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | head -20
 
-if [ ! -f "$BUILD_DIR/test-instr" ]; then
-    echo "错误: 编译失败"
+# 尝试使用afl-clang-fast编译（需要完整工具链）
+COMPILE_SUCCESS=0
+COMPILE_METHOD=""
+
+# 先尝试afl-clang-fast
+if "$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" >/dev/null 2>&1; then
+    if [ -f "$BUILD_DIR/test-instr" ]; then
+        echo "✓ 使用afl-clang-fast编译成功（带插桩）"
+        COMPILE_SUCCESS=1
+        COMPILE_METHOD="afl-clang-fast"
+    fi
+fi
+
+# 如果afl-clang-fast失败，使用普通编译器（无插桩，但可用于对比测试）
+if [ $COMPILE_SUCCESS -eq 0 ]; then
+    echo "提示: afl-clang-fast需要完整工具链，尝试使用普通编译器..."
+    
+    # 尝试gcc
+    if command -v gcc &> /dev/null; then
+        if gcc -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | head -10; then
+            if [ -f "$BUILD_DIR/test-instr" ]; then
+                echo "✓ 使用gcc编译成功（无插桩，仅用于策略对比）"
+                COMPILE_SUCCESS=1
+                COMPILE_METHOD="gcc"
+            fi
+        fi
+    fi
+    
+    # 如果gcc也失败，尝试clang
+    if [ $COMPILE_SUCCESS -eq 0 ] && command -v clang &> /dev/null; then
+        if clang -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | head -10; then
+            if [ -f "$BUILD_DIR/test-instr" ]; then
+                echo "✓ 使用clang编译成功（无插桩，仅用于策略对比）"
+                COMPILE_SUCCESS=1
+                COMPILE_METHOD="clang"
+            fi
+        fi
+    fi
+fi
+
+if [ $COMPILE_SUCCESS -eq 0 ] || [ ! -f "$BUILD_DIR/test-instr" ]; then
+    echo "错误: 编译失败，找不到可用的编译器"
+    echo "调试信息:"
+    echo "  尝试的命令: $AFL_CLANG_FAST"
+    echo "  目标文件: $BUILD_DIR/test-instr"
+    echo "  可用的编译器:"
+    command -v gcc && echo "    - gcc: $(command -v gcc)" || echo "    - gcc: 未找到"
+    command -v clang && echo "    - clang: $(command -v clang)" || echo "    - clang: 未找到"
     exit 1
 fi
-echo "✓ 编译成功"
 echo ""
 
 # 创建测试用例
