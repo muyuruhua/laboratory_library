@@ -15,23 +15,36 @@ echo ""
 mkdir -p "$BUILD_DIR"
 mkdir -p "$TESTCASES_DIR"
 
-# 检查工具
-if ! command -v afl-clang-fast &> /dev/null; then
+# 检查工具（优先使用本地编译的版本）
+if [ -f "$SCRIPT_DIR/afl-clang-fast" ]; then
+    AFL_CLANG_FAST="$SCRIPT_DIR/afl-clang-fast"
+elif command -v afl-clang-fast &> /dev/null; then
+    AFL_CLANG_FAST="afl-clang-fast"
+else
     echo "错误: 找不到afl-clang-fast"
     echo "请先编译AFL++: cd $SCRIPT_DIR && make"
     exit 1
 fi
 
-if ! command -v afl-fuzz &> /dev/null; then
+if [ -f "$SCRIPT_DIR/afl-fuzz" ]; then
+    AFL_FUZZ="$SCRIPT_DIR/afl-fuzz"
+elif command -v afl-fuzz &> /dev/null; then
+    AFL_FUZZ="afl-fuzz"
+else
     echo "错误: 找不到afl-fuzz"
     echo "请先编译AFL++: cd $SCRIPT_DIR && make"
     exit 1
 fi
 
+echo "使用工具:"
+echo "  afl-clang-fast: $AFL_CLANG_FAST"
+echo "  afl-fuzz: $AFL_FUZZ"
+echo ""
+
 # 编译test-instr.c
 echo "[1/3] 编译test-instr.c..."
 cd "$BUILD_DIR"
-afl-clang-fast -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | head -20
+"$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | head -20
 
 if [ ! -f "$BUILD_DIR/test-instr" ]; then
     echo "错误: 编译失败"
@@ -70,7 +83,7 @@ export AFL_SKIP_CPUFREQ=1
 export AFL_QUIET=1  # 减少输出
 
 # 运行afl-fuzz并保存日志
-timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_original" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/original.log" 2>&1 || true
+timeout 30 "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_original" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/original.log" 2>&1 || true
 
 # 等待文件写入
 sleep 2
@@ -100,7 +113,7 @@ echo "--- 测试新策略 (Lattice-MAB) ---"
 export AFL_LATTICE_MAB=1
 
 # 运行afl-fuzz并保存日志
-timeout 30 afl-fuzz -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_lattice_mab" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/lattice_mab.log" 2>&1 || true
+timeout 30 "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$BUILD_DIR/output_lattice_mab" -m none -- "$BUILD_DIR/test-instr" @@ > "$BUILD_DIR/lattice_mab.log" 2>&1 || true
 
 # 等待文件写入
 sleep 2

@@ -37,25 +37,37 @@ mkdir -p "$BUILD_DIR"
 mkdir -p "$RESULTS_DIR"
 mkdir -p "$TESTCASES_DIR"
 
-# 检查afl-clang-fast是否存在
-if ! command -v afl-clang-fast &> /dev/null; then
+# 检查工具（优先使用本地编译的版本）
+if [ -f "$SCRIPT_DIR/afl-clang-fast" ]; then
+    AFL_CLANG_FAST="$SCRIPT_DIR/afl-clang-fast"
+elif command -v afl-clang-fast &> /dev/null; then
+    AFL_CLANG_FAST="afl-clang-fast"
+else
     echo -e "${RED}错误: 找不到afl-clang-fast${NC}"
-    echo "请确保AFL++已正确安装并在PATH中"
+    echo "请先编译AFL++: cd $SCRIPT_DIR && make"
     exit 1
 fi
 
-# 检查afl-fuzz是否存在
-if ! command -v afl-fuzz &> /dev/null; then
+if [ -f "$SCRIPT_DIR/afl-fuzz" ]; then
+    AFL_FUZZ="$SCRIPT_DIR/afl-fuzz"
+elif command -v afl-fuzz &> /dev/null; then
+    AFL_FUZZ="afl-fuzz"
+else
     echo -e "${RED}错误: 找不到afl-fuzz${NC}"
-    echo "请确保AFL++已正确安装并在PATH中"
+    echo "请先编译AFL++: cd $SCRIPT_DIR && make"
     exit 1
 fi
+
+echo -e "${GREEN}使用工具:${NC}"
+echo "  afl-clang-fast: $AFL_CLANG_FAST"
+echo "  afl-fuzz: $AFL_FUZZ"
+echo ""
 
 echo -e "${GREEN}[1/5] 编译test-instr.c...${NC}"
 cd "$BUILD_DIR"
 
 # 编译test-instr.c
-afl-clang-fast -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | tee "$RESULTS_DIR/build.log"
+"$AFL_CLANG_FAST" -o test-instr "$SCRIPT_DIR/test-instr.c" 2>&1 | tee "$RESULTS_DIR/build.log"
 
 if [ ! -f "$BUILD_DIR/test-instr" ]; then
     echo -e "${RED}错误: 编译失败${NC}"
@@ -127,7 +139,7 @@ run_test() {
     export AFL_SKIP_CPUFREQ=1  # 跳过CPU频率检查
     
     # 运行afl-fuzz
-    timeout $TEST_TIME afl-fuzz \
+    timeout $TEST_TIME "$AFL_FUZZ" \
         -i "$TESTCASES_DIR" \
         -o "$output_dir" \
         -m none \
