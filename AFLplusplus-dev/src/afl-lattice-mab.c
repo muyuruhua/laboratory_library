@@ -270,13 +270,24 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
   arm->total_reward += (u64)(reward * 1000);  /* Scale for integer storage */
   arm->avg_reward = (double)arm->total_reward / (arm->pull_count * 1000.0);
   
-  /* Update UCB value */
+  /* Update UCB value with reduced exploration for efficiency */
   if (arm->pull_count > 0 && mab->total_pulls > 0) {
     
+    /* Reduced exploration term to favor exploitation */
     double exploration = MAB_ALPHA * 
                         sqrt(log((double)mab->total_pulls) / 
                              (double)arm->pull_count);
-    arm->ucb_value = arm->avg_reward + exploration;
+    
+    /* Additional efficiency factor: reduce UCB for arms with high pull count but low reward */
+    double efficiency_factor = 1.0;
+    if (arm->pull_count > 50 && arm->avg_reward < 0.01) {
+      
+      /* Penalize arms that have been tried many times with little reward */
+      efficiency_factor = 0.8;  /* Reduce UCB by 20% */
+      
+    }
+    
+    arm->ucb_value = (arm->avg_reward + exploration) * efficiency_factor;
     
   }
   
@@ -404,7 +415,7 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
   
 }
 
-/* Calculate reward for a mutation based on coverage gain */
+/* Calculate reward for a mutation based on coverage gain and efficiency */
 double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
                                 u32 new_edges, u32 new_paths) {
 
@@ -421,8 +432,37 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
     
   }
   
+  /* Efficiency-based reward: prefer mutations that achieve coverage with fewer executions */
+  /* Track execution efficiency: reward = coverage / (executions + 1) */
+  /* This encourages strategies that find coverage faster */
+  if (afl->lattice_mab_ctx && mutation_type < LATTICE_DIMENSION) {
+    
+    mutation_vector_t *vec = &afl->lattice_mab_ctx->lattice.vectors[mutation_type];
+    if (vec->usage_count > 0) {
+      
+      /* Efficiency metric: coverage per execution */
+      double efficiency = (double)(new_edges + new_paths) / (double)(vec->usage_count + 1);
+      
+      /* Add efficiency bonus (scaled) */
+      reward += efficiency * 5.0;
+      
+      /* Penalty for over-exploration: if usage count is very high but coverage is low */
+      if (vec->usage_count > 100 && (new_edges + new_paths) == 0) {
+        
+        /* Small penalty for inefficient mutations */
+        reward -= EFFICIENCY_PENALTY_FACTOR * (double)vec->usage_count / 1000.0;
+        
+      }
+      
+    }
+    
+  }
+  
   /* Normalize reward */
   reward = reward / 1000.0;
+  
+  /* Ensure reward is non-negative (but can be small) */
+  if (reward < 0.0) { reward = 0.0; }
   
   return reward;
   
@@ -468,11 +508,11 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
       
       double neighbor_reward = ctx->mab.arms[neighbor_idx].avg_reward;
       
-      /* Prefer neighbors with similar or better rewards */
-      if (neighbor_reward > best_reward * 0.9) {
+      /* Prefer neighbors with significantly better rewards (more conservative) */
+      if (neighbor_reward > best_reward * 1.1) {  /* Only if 10% better */
         
-        /* Randomly explore neighbors with good rewards */
-        if (rand_below(afl, 100) < 30) {  /* 30% chance */
+        /* Reduced exploration probability for efficiency */
+        if (rand_below(afl, 100) < NEIGHBOR_EXPLORE_PROB) {  /* Reduced from 30% to 10% */
           
           best_mutation = neighbor_idx;
           best_reward = neighbor_reward;
