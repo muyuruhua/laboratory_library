@@ -160,14 +160,25 @@ extract_stats() {
         return
     fi
     
-    local execs=$(grep "^execs_done" "$stats_file" | awk '{print $3}' || echo "0")
-    local edges=$(grep "^edges_found" "$stats_file" | awk '{print $3}' || echo "0")
-    local crashes=$(grep "^unique_crashes" "$stats_file" | awk '{print $3}' || echo "0")
-    local paths=$(grep "^paths_total" "$stats_file" | awk '{print $3}' || echo "0")
-    local cycles=$(grep "^cycles_done" "$stats_file" | awk '{print $3}' || echo "0")
-    local exec_time=$(grep "^exec_timeout" "$stats_file" | awk '{print $3}' || echo "0")
-    local paths_favored=$(grep "^paths_favored" "$stats_file" | awk '{print $3}' || echo "0")
-    local paths_imported=$(grep "^paths_imported" "$stats_file" | awk '{print $3}' || echo "0")
+    # 提取统计值，如果为空或不存在则使用默认值 0
+    local execs=$(grep "^execs_done" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local edges=$(grep "^edges_found" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local crashes=$(grep "^unique_crashes" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local paths=$(grep "^paths_total" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local cycles=$(grep "^cycles_done" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local exec_time=$(grep "^exec_timeout" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local paths_favored=$(grep "^paths_favored" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    local paths_imported=$(grep "^paths_imported" "$stats_file" 2>/dev/null | awk '{print $3}' | grep -E '^[0-9]+$' || echo "0")
+    
+    # 确保所有值都是数字，如果不是则设为 0
+    execs=${execs:-0}
+    edges=${edges:-0}
+    crashes=${crashes:-0}
+    paths=${paths:-0}
+    cycles=${cycles:-0}
+    exec_time=${exec_time:-0}
+    paths_favored=${paths_favored:-0}
+    paths_imported=${paths_imported:-0}
     
     echo "$execs,$edges,$crashes,$paths,$cycles,$exec_time,$paths_favored,$paths_imported"
 }
@@ -237,6 +248,16 @@ run_fuzz_test() {
         local stats=$(extract_stats "$stats_file")
         echo "  统计文件: $stats_file"
         IFS=',' read -r execs edges crashes paths cycles exec_time paths_favored paths_imported <<< "$stats"
+        
+        # 确保所有值都有默认值
+        execs=${execs:-0}
+        edges=${edges:-0}
+        crashes=${crashes:-0}
+        paths=${paths:-0}
+        cycles=${cycles:-0}
+        paths_favored=${paths_favored:-0}
+        paths_imported=${paths_imported:-0}
+        
         echo -e "  ${GREEN}执行次数: $execs${NC}"
         echo -e "  ${GREEN}发现边数: $edges${NC}"
         echo -e "  ${GREEN}崩溃数: $crashes${NC}"
@@ -295,6 +316,16 @@ REPORT_FILE="$RESULTS_DIR/comparison_report.txt"
     if [ -n "$original_stats_file" ] && [ -f "$original_stats_file" ]; then
         original_stats=$(extract_stats "$original_stats_file")
         IFS=',' read -r execs edges crashes paths cycles exec_time paths_favored paths_imported <<< "$original_stats"
+        
+        # 确保所有值都有默认值
+        execs=${execs:-0}
+        edges=${edges:-0}
+        crashes=${crashes:-0}
+        paths=${paths:-0}
+        cycles=${cycles:-0}
+        paths_favored=${paths_favored:-0}
+        paths_imported=${paths_imported:-0}
+        
         echo "  执行次数: $execs"
         echo "  发现边数: $edges"
         echo "  崩溃数: $crashes"
@@ -313,6 +344,16 @@ REPORT_FILE="$RESULTS_DIR/comparison_report.txt"
     if [ -n "$lattice_stats_file" ] && [ -f "$lattice_stats_file" ]; then
         lattice_stats=$(extract_stats "$lattice_stats_file")
         IFS=',' read -r execs edges crashes paths cycles exec_time paths_favored paths_imported <<< "$lattice_stats"
+        
+        # 确保所有值都有默认值
+        execs=${execs:-0}
+        edges=${edges:-0}
+        crashes=${crashes:-0}
+        paths=${paths:-0}
+        cycles=${cycles:-0}
+        paths_favored=${paths_favored:-0}
+        paths_imported=${paths_imported:-0}
+        
         echo "  执行次数: $execs"
         echo "  发现边数: $edges"
         echo "  崩溃数: $crashes"
@@ -337,19 +378,36 @@ REPORT_FILE="$RESULTS_DIR/comparison_report.txt"
         IFS=',' read -r orig_execs orig_edges orig_crashes orig_paths orig_cycles orig_time orig_favored orig_imported <<< "$original_stats"
         IFS=',' read -r latt_execs latt_edges latt_crashes latt_paths latt_cycles latt_time latt_favored latt_imported <<< "$lattice_stats"
         
-        if [ "$orig_execs" -gt 0 ]; then
-            execs_improvement=$(echo "scale=2; ($latt_execs - $orig_execs) * 100 / $orig_execs" | bc 2>/dev/null || echo "0")
+        # 确保所有值都是数字，如果不是则设为 0
+        orig_execs=${orig_execs:-0}
+        orig_edges=${orig_edges:-0}
+        orig_paths=${orig_paths:-0}
+        latt_execs=${latt_execs:-0}
+        latt_edges=${latt_edges:-0}
+        latt_paths=${latt_paths:-0}
+        
+        # 计算改进百分比（使用 awk 避免 bc 依赖）
+        if [ "$orig_execs" -gt 0 ] 2>/dev/null; then
+            execs_improvement=$(awk "BEGIN {printf \"%.2f\", ($latt_execs - $orig_execs) * 100 / $orig_execs}" 2>/dev/null || echo "0.00")
             echo "  执行次数改进: ${execs_improvement}%"
         fi
         
-        if [ "$orig_edges" -gt 0 ]; then
-            edges_improvement=$(echo "scale=2; ($latt_edges - $orig_edges) * 100 / $orig_edges" | bc 2>/dev/null || echo "0")
+        if [ "$orig_edges" -gt 0 ] 2>/dev/null; then
+            edges_improvement=$(awk "BEGIN {printf \"%.2f\", ($latt_edges - $orig_edges) * 100 / $orig_edges}" 2>/dev/null || echo "0.00")
             echo "  边覆盖率改进: ${edges_improvement}%"
         fi
         
-        if [ "$orig_paths" -gt 0 ]; then
-            paths_improvement=$(echo "scale=2; ($latt_paths - $orig_paths) * 100 / $orig_paths" | bc 2>/dev/null || echo "0")
+        if [ "$orig_paths" -gt 0 ] 2>/dev/null; then
+            paths_improvement=$(awk "BEGIN {printf \"%.2f\", ($latt_paths - $orig_paths) * 100 / $orig_paths}" 2>/dev/null || echo "0.00")
             echo "  路径数改进: ${paths_improvement}%"
+        fi
+        
+        # 计算循环数改进
+        orig_cycles=${orig_cycles:-0}
+        latt_cycles=${latt_cycles:-0}
+        if [ "$orig_cycles" -gt 0 ] 2>/dev/null; then
+            cycles_improvement=$(awk "BEGIN {printf \"%.2f\", ($latt_cycles - $orig_cycles) * 100 / $orig_cycles}" 2>/dev/null || echo "0.00")
+            echo "  循环数改进: ${cycles_improvement}%"
         fi
     fi
     
