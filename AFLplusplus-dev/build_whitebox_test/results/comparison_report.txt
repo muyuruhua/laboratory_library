@@ -1,0 +1,46 @@
+========================================
+test-whiteBox.c 对比测试报告
+生成时间: Thu Nov 20 04:05:20 CST 2025
+========================================
+
+测试配置:
+  目标程序: test-whiteBox.c
+  编译方式: afl-clang-fast
+  测试时间: 60秒/策略
+
+----------------------------------------
+原策略结果:
+----------------------------------------
+  执行次数: 80695
+  发现边数: 17
+  崩溃数: 
+  路径数: 
+  循环数: 70
+  偏好路径: 
+  导入路径: 
+
+----------------------------------------
+Lattice-MAB 策略结果:
+----------------------------------------
+  执行次数: 81067
+  发现边数: 17
+  崩溃数: 
+  路径数: 
+  循环数: 74
+  偏好路径: 
+  导入路径: 
+
+----------------------------------------
+对比分析:
+----------------------------------------
+  执行次数改进: 0%
+  边覆盖率改进: 0%
+
+详细日志:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original.log
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab.log
+
+输出目录:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab
+
