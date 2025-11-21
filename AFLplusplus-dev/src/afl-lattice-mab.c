@@ -270,7 +270,7 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
   arm->total_reward += (u64)(reward * 1000);  /* Scale for integer storage */
   arm->avg_reward = (double)arm->total_reward / (arm->pull_count * 1000.0);
   
-  /* Update UCB value with efficiency-based weighting */
+  /* Update UCB value with aggressive efficiency-based weighting */
   if (arm->pull_count > 0 && mab->total_pulls > 0) {
     
     /* Reduced exploration term to favor exploitation */
@@ -283,22 +283,27 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
     if (arm->pull_count > EFFICIENCY_THRESHOLD) {
       
       /* Calculate efficiency: reward per pull */
-      double efficiency = arm->avg_reward;
+      double efficiency = arm->avg_reward / (double)arm->pull_count;
       
-      /* Progressive penalty based on efficiency */
+      /* More aggressive progressive penalty based on efficiency */
       if (efficiency < MIN_EFFICIENCY_RATIO) {
         
-        /* Strong penalty for very inefficient arms */
-        efficiency_factor = 0.4;  /* Reduce UCB by 60% */
+        /* Very strong penalty for very inefficient arms */
+        efficiency_factor = 0.2;  /* Reduce UCB by 80% */
         
       } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
         
-        /* Moderate penalty for moderately inefficient arms */
-        efficiency_factor = 0.6;  /* Reduce UCB by 40% */
+        /* Strong penalty for moderately inefficient arms */
+        efficiency_factor = 0.4;  /* Reduce UCB by 60% */
         
       } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
         
-        /* Small penalty for slightly inefficient arms */
+        /* Moderate penalty for slightly inefficient arms */
+        efficiency_factor = 0.6;  /* Reduce UCB by 40% */
+        
+      } else if (efficiency < MIN_EFFICIENCY_RATIO * 10) {
+        
+        /* Small penalty for marginally inefficient arms */
         efficiency_factor = 0.8;  /* Reduce UCB by 20% */
         
       }
@@ -345,10 +350,24 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
   
   switch (mab->strategy_type) {
     
-    case 0: {  /* UCB (Upper Confidence Bound) with efficiency weighting */
+    case 0: {  /* UCB (Upper Confidence Bound) with efficiency weighting and direct filtering */
       
       double max_ucb = -1e10;
       for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
+        
+        /* Direct efficiency filtering: skip arms with very low efficiency */
+        if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
+          
+          double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+          
+          /* Skip arms with efficiency below minimum threshold */
+          if (efficiency < MIN_EFFICIENCY_RATIO) {
+            
+            continue;  /* Skip this arm completely */
+            
+          }
+          
+        }
         
         /* Update UCB before selection */
         if (mab->arms[i].pull_count > 0) {
@@ -363,16 +382,20 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
           if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
             
             /* Calculate efficiency: reward per pull */
-            double efficiency = mab->arms[i].avg_reward;
+            double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
             
-            /* Reduce UCB for inefficient arms */
-            if (efficiency < MIN_EFFICIENCY_RATIO) {
+            /* Progressive penalty based on efficiency */
+            if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
               
-              efficiency_factor = 0.5;  /* Reduce UCB by 50% for very inefficient arms */
+              efficiency_factor = 0.3;  /* Reduce UCB by 70% for very inefficient arms */
               
-            } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
+            } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
               
-              efficiency_factor = 0.7;  /* Reduce UCB by 30% for moderately inefficient arms */
+              efficiency_factor = 0.5;  /* Reduce UCB by 50% for moderately inefficient arms */
+              
+            } else if (efficiency < MIN_EFFICIENCY_RATIO * 10) {
+              
+              efficiency_factor = 0.7;  /* Reduce UCB by 30% for slightly inefficient arms */
               
             }
             
@@ -382,8 +405,8 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
           
         } else {
           
-          /* Unexplored arms get moderate UCB (reduced from 1e10 to encourage exploitation) */
-          mab->arms[i].ucb_value = 1.0;  /* Reduced from 1e10 to favor explored arms */
+          /* Unexplored arms get very low UCB to strongly favor explored arms */
+          mab->arms[i].ucb_value = 0.5;  /* Further reduced from 1.0 to strongly favor explored arms */
           
         }
         
@@ -399,25 +422,75 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
       
     }
     
-    case 1: {  /* Epsilon-Greedy */
+    case 1: {  /* Epsilon-Greedy with efficiency filtering */
       
       double rand_val = (double)rand_below(afl, 10000) / 10000.0;
       
       if (rand_val < MAB_EPSILON) {
         
-        /* Explore: random selection */
-        selected_arm = rand_below(afl, mab->arm_count);
+        /* Explore: random selection from efficient arms only */
+        u32 efficient_arms[MUT_MAX];
+        u32 efficient_count = 0;
+        
+        for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
+          
+          /* Only consider efficient arms for exploration */
+          if (mab->arms[i].pull_count == 0 || 
+              mab->arms[i].pull_count <= EFFICIENCY_THRESHOLD ||
+              (mab->arms[i].avg_reward / (double)mab->arms[i].pull_count) >= MIN_EFFICIENCY_RATIO) {
+            
+            efficient_arms[efficient_count++] = i;
+            
+          }
+          
+        }
+        
+        if (efficient_count > 0) {
+          
+          selected_arm = efficient_arms[rand_below(afl, efficient_count)];
+          
+        } else {
+          
+          /* Fallback: select best arm if no efficient arms */
+          selected_arm = 0;
+          
+        }
+        
         if (selected_arm >= MUT_MAX) { selected_arm = MUT_MAX - 1; }
         
       } else {
         
-        /* Exploit: select best arm */
-        double max_reward = -1e10;
+        /* Exploit: select best arm based on efficiency */
+        double max_efficiency = -1e10;
         for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
           
-          if (mab->arms[i].avg_reward > max_reward) {
+          /* Skip inefficient arms */
+          if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
             
-            max_reward = mab->arms[i].avg_reward;
+            double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+            if (efficiency < MIN_EFFICIENCY_RATIO) {
+              
+              continue;  /* Skip inefficient arms */
+              
+            }
+            
+          }
+          
+          /* Use efficiency as selection criterion */
+          double efficiency = 0.0;
+          if (mab->arms[i].pull_count > 0) {
+            
+            efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+            
+          } else {
+            
+            efficiency = 0.1;  /* Small bonus for unexplored arms */
+            
+          }
+          
+          if (efficiency > max_efficiency) {
+            
+            max_efficiency = efficiency;
             selected_arm = i;
             
           }
@@ -483,7 +556,7 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
       double efficiency = (double)(new_edges + new_paths) / (double)(vec->usage_count + 1);
       
       /* Strong efficiency bonus - this is now the dominant factor */
-      reward += efficiency * 20.0;  /* Increased from 5.0 to 20.0 */
+      reward += efficiency * EFFICIENCY_REWARD_WEIGHT;  /* Increased to 30.0 */
       
       /* More aggressive penalty for over-exploration */
       if (vec->usage_count > EFFICIENCY_THRESHOLD) {
@@ -494,9 +567,9 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
         /* Penalty if efficiency is below threshold */
         if (current_efficiency < MIN_EFFICIENCY_RATIO) {
           
-          /* Strong penalty for inefficient mutations */
+          /* Very strong penalty for inefficient mutations */
           double penalty = EFFICIENCY_PENALTY_FACTOR * 
-                          (double)vec->usage_count / 100.0;  /* Increased penalty */
+                          (double)vec->usage_count / 50.0;  /* Increased penalty (from 100.0 to 50.0) */
           reward -= penalty;
           
         }
@@ -506,9 +579,9 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
       /* Additional penalty for mutations with high usage but zero recent coverage */
       if (vec->usage_count > EFFICIENCY_THRESHOLD && (new_edges + new_paths) == 0) {
         
-        /* Progressive penalty based on usage count */
+        /* More aggressive progressive penalty based on usage count */
         double progressive_penalty = EFFICIENCY_PENALTY_FACTOR * 
-                                    (double)vec->usage_count / 50.0;
+                                    (double)vec->usage_count / 30.0;  /* Increased penalty (from 50.0 to 30.0) */
         reward -= progressive_penalty;
         
       }
