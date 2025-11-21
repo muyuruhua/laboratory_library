@@ -2,18 +2,75 @@
 
 # 多次运行 test_whitebox.sh 脚本并汇总结果
 # 用法: ./run_multiple_tests.sh [运行次数]
+# 示例: ./run_multiple_tests.sh 5    # 运行5次
+#       ./run_multiple_tests.sh 10   # 运行10次
+#       ./run_multiple_tests.sh      # 默认运行5次
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_SCRIPT="$SCRIPT_DIR/test_whitebox.sh"
 RESULTS_DIR="$SCRIPT_DIR/multiple_test_results"
-RUN_COUNT=${1:-5}  # 默认运行5次，可以通过参数指定
 
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# 显示帮助信息
+show_help() {
+    echo "用法: $0 [选项] [运行次数]"
+    echo ""
+    echo "选项:"
+    echo "  -h, --help     显示此帮助信息"
+    echo ""
+    echo "参数:"
+    echo "  运行次数       要运行的测试次数（默认: 5）"
+    echo ""
+    echo "示例:"
+    echo "  $0              # 运行5次（默认）"
+    echo "  $0 5            # 运行5次"
+    echo "  $0 10           # 运行10次"
+    echo "  $0 --help       # 显示帮助信息"
+    echo ""
+}
+
+# 解析命令行参数
+RUN_COUNT=5  # 默认值
+
+if [ $# -gt 0 ]; then
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            # 检查是否为数字
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                RUN_COUNT=$1
+                if [ "$RUN_COUNT" -lt 1 ]; then
+                    echo -e "${RED}错误: 运行次数必须大于 0${NC}"
+                    exit 1
+                fi
+                if [ "$RUN_COUNT" -gt 100 ]; then
+                    echo -e "${YELLOW}警告: 运行次数超过 100，这可能需要很长时间${NC}"
+                    read -p "是否继续？(y/N): " -n 1 -r
+                    echo
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        exit 0
+                    fi
+                fi
+            else
+                echo -e "${RED}错误: 无效的参数 '$1'${NC}"
+                echo -e "${YELLOW}运行次数必须是数字${NC}"
+                echo ""
+                show_help
+                exit 1
+            fi
+            ;;
+    esac
+fi
 
 echo "========================================"
 echo "多次运行 test-whiteBox.c 对比测试"
