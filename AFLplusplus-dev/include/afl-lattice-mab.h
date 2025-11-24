@@ -30,15 +30,16 @@ typedef struct afl_state afl_state_t;
 /* Note: MUT_MAX is defined in afl-mutations.h, but we avoid including it here
    to prevent circular dependencies. The value 37 matches MUT_MAX. */
 #define LATTICE_DIMENSION 37  /* Number of mutation types (MUT_MAX) */
-#define MAB_ALPHA 0.005       /* UCB exploration parameter (aggressively reduced for efficiency) */
-#define MAB_EPSILON 0.01      /* Epsilon-greedy parameter (aggressively reduced for efficiency) */
+#define MAB_ALPHA 0.01        /* UCB exploration parameter (increased for better exploration) */
+#define MAB_EPSILON 0.05      /* Epsilon-greedy parameter (increased for better exploration) */
 #define LATTICE_NEIGHBOR_RADIUS 3  /* Radius for nearest neighbor search */
 #define MAB_WINDOW_SIZE 1000  /* Window size for reward tracking */
-#define EFFICIENCY_PENALTY_FACTOR 0.5  /* Strong penalty for high execution count */
-#define NEIGHBOR_EXPLORE_PROB 2  /* Minimized probability of exploring neighbors */
-#define EFFICIENCY_THRESHOLD 30  /* Threshold for efficiency penalty (early trigger) */
-#define MIN_EFFICIENCY_RATIO 0.0001  /* Minimum efficiency ratio to avoid penalty */
-#define EFFICIENCY_REWARD_WEIGHT 30.0  /* Weight for efficiency reward (increased from 20.0) */
+#define EFFICIENCY_PENALTY_FACTOR 0.3  /* Reduced penalty to avoid premature abandonment */
+#define NEIGHBOR_EXPLORE_PROB 5  /* Increased probability of exploring neighbors */
+#define EFFICIENCY_THRESHOLD 50  /* Increased threshold to allow more exploration */
+#define MIN_EFFICIENCY_RATIO 0.00005  /* Reduced minimum ratio to be less restrictive */
+#define EFFICIENCY_REWARD_WEIGHT 25.0  /* Balanced weight for efficiency reward */
+#define COVERAGE_REWARD_WEIGHT 10.0  /* Increased weight for direct coverage gain */
 
 /* Mutation Vector Structure */
 typedef struct {

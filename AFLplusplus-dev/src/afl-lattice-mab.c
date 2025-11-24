@@ -384,20 +384,20 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
             /* Calculate efficiency: reward per pull */
             double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
             
-            /* Progressive penalty based on efficiency */
-            if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
-              
-              efficiency_factor = 0.3;  /* Reduce UCB by 70% for very inefficient arms */
-              
-            } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
-              
-              efficiency_factor = 0.5;  /* Reduce UCB by 50% for moderately inefficient arms */
-              
-            } else if (efficiency < MIN_EFFICIENCY_RATIO * 10) {
-              
-              efficiency_factor = 0.7;  /* Reduce UCB by 30% for slightly inefficient arms */
-              
-            }
+          /* Progressive penalty based on efficiency (more lenient) */
+          if (efficiency < MIN_EFFICIENCY_RATIO) {
+            
+            efficiency_factor = 0.5;  /* Reduce UCB by 50% for very inefficient arms */
+            
+          } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
+            
+            efficiency_factor = 0.7;  /* Reduce UCB by 30% for moderately inefficient arms */
+            
+          } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
+            
+            efficiency_factor = 0.85;  /* Reduce UCB by 15% for slightly inefficient arms */
+            
+          }
             
           }
           
@@ -405,8 +405,8 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
           
         } else {
           
-          /* Unexplored arms get very low UCB to strongly favor explored arms */
-          mab->arms[i].ucb_value = 0.5;  /* Further reduced from 1.0 to strongly favor explored arms */
+          /* Unexplored arms get moderate UCB to encourage exploration */
+          mab->arms[i].ucb_value = 1.0;  /* Increased from 0.5 to encourage more exploration */
           
         }
         
@@ -535,8 +535,8 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
   (void)mutation_type;  /* Suppress unused parameter warning */
   if (!afl) { return 0.0; }
   
-  /* Base reward from new coverage (reduced weight to emphasize efficiency) */
-  double reward = (double)new_edges * 5.0 + (double)new_paths * 2.5;
+  /* Base reward from new coverage (increased weight to emphasize coverage discovery) */
+  double reward = (double)new_edges * COVERAGE_REWARD_WEIGHT + (double)new_paths * (COVERAGE_REWARD_WEIGHT * 0.5);
   
   /* Bonus for finding crashes */
   if (afl->saved_crashes > 0) {
@@ -545,51 +545,62 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
     
   }
   
-  /* Efficiency-based reward: prefer mutations that achieve coverage with fewer executions */
-  /* This is now the PRIMARY factor in reward calculation */
+  /* Efficiency-based reward: balance between coverage discovery and efficiency */
   if (afl->lattice_mab_ctx && mutation_type < LATTICE_DIMENSION) {
     
     mutation_vector_t *vec = &afl->lattice_mab_ctx->lattice.vectors[mutation_type];
+    
+    /* Calculate historical efficiency: total coverage per total usage */
+    double historical_efficiency = 0.0;
     if (vec->usage_count > 0) {
       
-      /* Efficiency metric: coverage per execution (primary metric) */
-      double efficiency = (double)(new_edges + new_paths) / (double)(vec->usage_count + 1);
+      /* Use historical average reward as proxy for efficiency */
+      historical_efficiency = vec->avg_reward;
       
-      /* Strong efficiency bonus - this is now the dominant factor */
-      reward += efficiency * EFFICIENCY_REWARD_WEIGHT;  /* Increased to 30.0 */
-      
-      /* More aggressive penalty for over-exploration */
-      if (vec->usage_count > EFFICIENCY_THRESHOLD) {
+      /* Efficiency bonus: reward mutations that have good historical performance */
+      if (historical_efficiency > 0.0) {
         
-        /* Calculate current efficiency ratio */
-        double current_efficiency = (double)(new_edges + new_paths) / (double)vec->usage_count;
-        
-        /* Penalty if efficiency is below threshold */
-        if (current_efficiency < MIN_EFFICIENCY_RATIO) {
-          
-          /* Very strong penalty for inefficient mutations */
-          double penalty = EFFICIENCY_PENALTY_FACTOR * 
-                          (double)vec->usage_count / 50.0;  /* Increased penalty (from 100.0 to 50.0) */
-          reward -= penalty;
-          
-        }
-        
-      }
-      
-      /* Additional penalty for mutations with high usage but zero recent coverage */
-      if (vec->usage_count > EFFICIENCY_THRESHOLD && (new_edges + new_paths) == 0) {
-        
-        /* More aggressive progressive penalty based on usage count */
-        double progressive_penalty = EFFICIENCY_PENALTY_FACTOR * 
-                                    (double)vec->usage_count / 30.0;  /* Increased penalty (from 50.0 to 30.0) */
-        reward -= progressive_penalty;
+        reward += historical_efficiency * EFFICIENCY_REWARD_WEIGHT;
         
       }
       
     } else {
       
-      /* Small bonus for unexplored mutations (to encourage initial exploration) */
-      reward += 0.1;
+      /* Larger bonus for unexplored mutations to encourage exploration */
+      reward += 1.0;  /* Increased from 0.1 to encourage more exploration */
+      
+    }
+    
+    /* Adaptive penalty: only penalize if mutation is clearly inefficient */
+    if (vec->usage_count > EFFICIENCY_THRESHOLD) {
+      
+      /* Calculate current efficiency ratio */
+      double current_efficiency = 0.0;
+      if (vec->usage_count > 0) {
+        
+        current_efficiency = historical_efficiency;
+        
+      }
+      
+      /* Only apply penalty if efficiency is significantly below threshold */
+      if (current_efficiency < MIN_EFFICIENCY_RATIO && (new_edges + new_paths) == 0) {
+        
+        /* Reduced penalty to avoid premature abandonment */
+        double penalty = EFFICIENCY_PENALTY_FACTOR * 
+                        (double)vec->usage_count / 100.0;  /* Reduced from 50.0 to 100.0 */
+        reward -= penalty;
+        
+      }
+      
+    }
+    
+    /* Reduced penalty for zero coverage: only if usage is very high */
+    if (vec->usage_count > EFFICIENCY_THRESHOLD * 2 && (new_edges + new_paths) == 0) {
+      
+      /* More lenient progressive penalty */
+      double progressive_penalty = EFFICIENCY_PENALTY_FACTOR * 
+                                  (double)vec->usage_count / 80.0;  /* Reduced from 30.0 to 80.0 */
+      reward -= progressive_penalty;
       
     }
     
@@ -632,20 +643,21 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
   u32 best_mutation = base_mutation;
   double best_reward = ctx->mab.arms[base_mutation].avg_reward;
   
-  /* Only explore neighbors if base mutation efficiency is questionable */
+  /* Explore neighbors more frequently to find better mutations */
   bool should_explore_neighbors = false;
   if (selected_vec->usage_count > 0) {
     
     double base_efficiency = best_reward / (double)(selected_vec->usage_count + 1);
-    if (base_efficiency < MIN_EFFICIENCY_RATIO * 2) {
+    /* Explore if base is inefficient OR if we haven't explored much */
+    if (base_efficiency < MIN_EFFICIENCY_RATIO * 5 || selected_vec->usage_count < 20) {
       
-      should_explore_neighbors = true;  /* Only explore if base is inefficient */
+      should_explore_neighbors = true;  /* Explore more frequently */
       
     }
     
   } else {
     
-    should_explore_neighbors = true;  /* Explore if base is unexplored */
+    should_explore_neighbors = true;  /* Always explore if base is unexplored */
     
   }
   
@@ -681,22 +693,22 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
           
         }
         
-        /* Prefer neighbors with significantly better rewards AND efficiency */
-        if (neighbor_reward > best_reward * 1.2 && 
-            neighbor_efficiency > base_efficiency * 1.1) {  /* Must be 20% better reward AND 10% better efficiency */
+        /* Prefer neighbors with better rewards or efficiency */
+        if (neighbor_reward > best_reward * 1.1 || 
+            (neighbor_efficiency > base_efficiency * 1.05 && neighbor_reward >= best_reward * 0.9)) {
           
-          /* Further reduced exploration probability for efficiency */
-          if (rand_below(afl, 100) < NEIGHBOR_EXPLORE_PROB) {  /* Reduced to 5% */
+          /* Increased exploration probability */
+          if (rand_below(afl, 100) < NEIGHBOR_EXPLORE_PROB) {
             
             best_mutation = neighbor_idx;
             best_reward = neighbor_reward;
             
           }
           
-        } else if (neighbor_reward > best_reward * 1.5 && 
-                   neighbor_efficiency > base_efficiency * 1.2) {
+        } else if (neighbor_reward > best_reward * 1.3 || 
+                   (neighbor_efficiency > base_efficiency * 1.15 && neighbor_reward >= best_reward)) {
           
-          /* Only for very significant improvements (50% better reward AND 20% better efficiency), always switch */
+          /* For significant improvements, always switch */
           best_mutation = neighbor_idx;
           best_reward = neighbor_reward;
           
