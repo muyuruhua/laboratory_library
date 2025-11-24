@@ -208,19 +208,16 @@ run_fuzz_test() {
     
     # 设置 AFL++ 环境变量
     export AFL_SKIP_CPUFREQ=1
+    # 跳过 CPU 绑定检查，避免在虚拟化环境中扫描 /proc 目录时卡住
+    export AFL_NO_AFFINITY=1
     # 允许在 core_pattern 配置不理想的情况下运行（用于测试环境）
     export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
     # 减少输出（可选，如果需要更多调试信息可以注释掉）
     export AFL_QUIET=1
     
-    # 先测试程序是否能被 AFL++ 执行
-    echo "  测试程序执行..."
-    if ! echo "1 2" | timeout 2s "$TARGET_BINARY" >/dev/null 2>&1; then
-        echo -e "  ${YELLOW}警告: 程序可能无法正常执行${NC}"
-    fi
-    
-    # 运行 afl-fuzz（前台运行以便看到输出）
-    timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -m none \
+    # 运行 afl-fuzz（后台运行）
+    # 设置执行超时为 1000ms（1秒），避免单个测试用例执行时间过长导致卡住
+    timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -m none -t 1000 \
         -- "$TARGET_BINARY" > "$RESULTS_DIR/${strategy_name}.log" 2>&1 &
     local fuzz_pid=$!
     
@@ -235,9 +232,36 @@ run_fuzz_test() {
         return 1
     fi
     
-    # 等待完成
-    wait $fuzz_pid
-    local exit_code=$?
+    # 等待完成（使用超时保护，避免无限等待）
+    local wait_timeout=$((TEST_TIME + 10))  # 比测试时间多10秒
+    local waited=0
+    while kill -0 $fuzz_pid 2>/dev/null && [ $waited -lt $wait_timeout ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    # 获取退出码
+    local exit_code=0
+    if kill -0 $fuzz_pid 2>/dev/null; then
+        # 如果timeout进程仍在运行（不应该发生），强制终止
+        echo -e "  ${YELLOW}警告: timeout进程仍在运行，强制终止...${NC}"
+        kill -9 $fuzz_pid 2>/dev/null || true
+        wait $fuzz_pid 2>/dev/null || true
+        exit_code=124
+    else
+        # 等待timeout进程结束并获取退出码
+        wait $fuzz_pid 2>/dev/null
+        exit_code=$?
+    fi
+    
+    # 退出码124是timeout命令的正常退出码（表示afl-fuzz被timeout终止），不需要警告
+    if [ $exit_code -ne 0 ] && [ $exit_code -ne 124 ]; then
+        echo -e "  ${YELLOW}警告: timeout命令异常退出，退出码: $exit_code${NC}"
+        if [ -f "$RESULTS_DIR/${strategy_name}.log" ]; then
+            echo "  错误日志:"
+            tail -30 "$RESULTS_DIR/${strategy_name}.log" | sed 's/^/    /'
+        fi
+    fi
     
     # 等待文件写入
     sleep 2

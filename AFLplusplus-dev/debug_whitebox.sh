@@ -105,6 +105,7 @@ mkdir -p "$TESTCASES_DIR"
 echo "1 2" > "$TESTCASES_DIR/test1.txt"
 
 export AFL_SKIP_CPUFREQ=1
+export AFL_NO_AFFINITY=1  # 跳过CPU绑定检查，避免在虚拟化环境中扫描 /proc 目录时卡住
 echo "  运行 afl-showmap 测试..."
 if [ -f "$SCRIPT_DIR/afl-showmap" ]; then
     OUTPUT_DIR="$BUILD_DIR/test_output"

@@ -124,6 +124,7 @@ echo ""
 echo "--- 测试原有策略 ---"
 export AFL_LATTICE_MAB=0
 export AFL_SKIP_CPUFREQ=1
+export AFL_NO_AFFINITY=1  # 跳过CPU绑定检查，避免在虚拟化环境中扫描 /proc 目录时卡住
 export AFL_QUIET=1  # 减少输出
 
 # 运行afl-fuzz并保存日志

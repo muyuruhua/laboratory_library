@@ -179,6 +179,7 @@ run_test() {
     # 设置环境变量
     export AFL_LATTICE_MAB=$use_lattice_mab
     export AFL_SKIP_CPUFREQ=1  # 跳过CPU频率检查
+    export AFL_NO_AFFINITY=1  # 跳过CPU绑定检查，避免在虚拟化环境中扫描 /proc 目录时卡住
     
     # 运行afl-fuzz
     timeout $TEST_TIME "$AFL_FUZZ" \
