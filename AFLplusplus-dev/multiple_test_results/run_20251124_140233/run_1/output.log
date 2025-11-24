@@ -1,0 +1,133 @@
+========================================
+test-whiteBox.c 对比测试
+原策略 vs Lattice-MAB 策略
+========================================
+
+配置:
+  测试时间: 60秒
+  目标程序: /home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c
+  构建目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test
+
+使用工具:
+  afl-clang-fast: /home/apulis-dev/code/AFLplusplus-dev/afl-clang-fast
+  afl-fuzz: /home/apulis-dev/code/AFLplusplus-dev/afl-fuzz
+
+[0;32m[1/4] 编译 test-whiteBox.c...[0m
+[0;32m✓ 使用afl-clang-fast编译成功（带插桩）[0m
+
+[0;32m[2/4] 创建初始测试用例...[0m
+[0;32m✓ 测试用例创建完成[0m
+  验证程序是否能正常运行...
+  [0;32m✓ 程序可以正常运行[0m
+
+[0;32m[3/4] 运行对比测试（60秒/策略）...[0m
+
+[0;34m--- 测试original策略 ---[0m
+rm: cannot remove '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original/default/.nfs000000029fe26dc0000001d1': Device or resource busy
+  运行时间: 60秒...
+  [0;31m错误: afl-fuzz 进程已退出[0m
+  错误日志:
+    [1;92m[+] [0mNOTE: AFL++ >= v3 has changed defaults and behaviours - see README.md[0m
+    [1;92m[+] [0mNo -M/-S set, autoconfiguring for "-S default"[0m
+    [1;94m[*] [0mGetting to work...[0m
+    [1;92m[+] [0mUsing exploration-based constant power schedule (EXPLORE)[0m
+    [1;92m[+] [0mEnabled testcache with 50 MB[0m
+    [1;92m[+] [0mGenerating fuzz data with a length of min=1 max=1048576[0m
+    [1;94m[*] [0mChecking core_pattern...[0m
+    
+    [1;91m[-] [0mYour system is configured to send core dump notifications to an
+        external utility. This will cause issues: there will be an extended delay
+        between stumbling upon a crash and having this information relayed to the
+        fuzzer via the standard waitpid() API.
+        If you're just experimenting, set 'AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1'.
+    
+        To avoid having crashes misinterpreted as timeouts, please 
+        temporarily modify /proc/sys/kernel/core_pattern, like so:
+    
+        echo core | sudo tee /proc/sys/kernel/core_pattern
+    [1;92m[+] [0mLooks like we're not running on a tty, so I'll be a bit less verbose.[0m
+    [1;92m[+] [0mYou have 128 CPU cores and 13 runnable tasks (utilization: 10%).[0m
+    [1;92m[+] [0mTry parallel jobs - see /usr/local/share/doc/afl/fuzzing_in_depth.md#c-using-multiple-cores[0m
+    [1;94m[*] [0mSetting up output directories...[0m
+    
+    [1;91m[-] [0mLooks like the job output directory is being actively used by another
+        instance of afl-fuzz. You will need to choose a different fuzzer ID
+        or stop the other process first.
+    [?25h[0m[1;91m
+    [-] PROGRAM ABORT : [0mDirectory '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original/default' is in use[1;91m
+             Location : [0mhandle_existing_out_dir(), src/afl-fuzz-init.c:1927
+    
+[0;34m--- 测试lattice_mab策略 ---[0m
+rm: cannot remove '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab/default/.nfs00000002a41a1bc0000001ce': Device or resource busy
+rm: cannot remove '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab/default/.nfs00000002a41a1cc0000001cd': Device or resource busy
+  运行时间: 60秒...
+  [0;31m错误: afl-fuzz 进程已退出[0m
+  错误日志:
+    [1;92m[+] [0mNOTE: AFL++ >= v3 has changed defaults and behaviours - see README.md[0m
+    [1;92m[+] [0mNo -M/-S set, autoconfiguring for "-S default"[0m
+    [1;94m[*] [0mGetting to work...[0m
+    [1;92m[+] [0mUsing exploration-based constant power schedule (EXPLORE)[0m
+    [1;92m[+] [0mEnabled testcache with 50 MB[0m
+    [1;92m[+] [0mGenerating fuzz data with a length of min=1 max=1048576[0m
+    [1;94m[*] [0mChecking core_pattern...[0m
+    
+    [1;91m[-] [0mYour system is configured to send core dump notifications to an
+        external utility. This will cause issues: there will be an extended delay
+        between stumbling upon a crash and having this information relayed to the
+        fuzzer via the standard waitpid() API.
+        If you're just experimenting, set 'AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1'.
+    
+        To avoid having crashes misinterpreted as timeouts, please 
+        temporarily modify /proc/sys/kernel/core_pattern, like so:
+    
+        echo core | sudo tee /proc/sys/kernel/core_pattern
+    [1;92m[+] [0mLooks like we're not running on a tty, so I'll be a bit less verbose.[0m
+    [1;92m[+] [0mYou have 128 CPU cores and 14 runnable tasks (utilization: 11%).[0m
+    [1;92m[+] [0mTry parallel jobs - see /usr/local/share/doc/afl/fuzzing_in_depth.md#c-using-multiple-cores[0m
+    [1;94m[*] [0mSetting up output directories...[0m
+    
+    [1;91m[-] [0mLooks like the job output directory is being actively used by another
+        instance of afl-fuzz. You will need to choose a different fuzzer ID
+        or stop the other process first.
+    [?25h[0m[1;91m
+    [-] PROGRAM ABORT : [0mDirectory '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab/default' is in use[1;91m
+             Location : [0mhandle_existing_out_dir(), src/afl-fuzz-init.c:1927
+    
+[0;32m[4/4] 生成对比报告...[0m
+========================================
+test-whiteBox.c 对比测试报告
+生成时间: Mon Nov 24 14:02:39 UTC 2025
+========================================
+
+测试配置:
+  目标程序: test-whiteBox.c
+  编译方式: afl-clang-fast
+  测试时间: 60秒/策略
+
+----------------------------------------
+原策略结果:
+----------------------------------------
+  无法读取统计信息
+
+----------------------------------------
+Lattice-MAB 策略结果:
+----------------------------------------
+  无法读取统计信息
+
+----------------------------------------
+对比分析:
+----------------------------------------
+
+详细日志:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original.log
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab.log
+
+输出目录:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab
+
+
+[0;32m✓ 对比测试完成！[0m
+
+报告已保存到: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/comparison_report.txt
+结果目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results

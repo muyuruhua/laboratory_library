@@ -1,0 +1,38 @@
+========================================
+test-whiteBox.c 对比测试
+原策略 vs Lattice-MAB 策略
+========================================
+
+配置:
+  测试时间: 60秒
+  目标程序: /home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c
+  构建目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test
+
+使用工具:
+  afl-clang-fast: /home/apulis-dev/code/AFLplusplus-dev/afl-clang-fast
+  afl-fuzz: /home/apulis-dev/code/AFLplusplus-dev/afl-fuzz
+
+[0;32m[1/4] 编译 test-whiteBox.c...[0m
+[1;33m提示: 使用普通编译器编译（无插桩，仅用于策略对比）...[0m
+/home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c: In function ‘main’:
+/home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c:138:12: warning: passing argument 1 of ‘printf’ makes pointer from integer without a cast [-Wint-conversion]
+  138 |     printf(is_prime(4));
+      |            ^~~~~~~~~~~
+      |            |
+      |            int
+In file included from /home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c:1:
+/usr/include/stdio.h:356:43: note: expected ‘const char * restrict’ but argument is of type ‘int’
+  356 | extern int printf (const char *__restrict __format, ...);
+      |                    ~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+[0;32m✓ 使用gcc编译成功（无插桩，仅用于策略对比）[0m
+
+[0;32m[2/4] 创建初始测试用例...[0m
+[0;32m✓ 测试用例创建完成[0m
+  验证程序是否能正常运行...
+  [0;32m✓ 程序可以正常运行[0m
+
+[0;32m[3/4] 运行对比测试（60秒/策略）...[0m
+
+[0;34m--- 测试original策略 ---[0m
+  运行时间: 60秒...
+  测试程序执行...

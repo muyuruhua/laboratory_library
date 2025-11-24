@@ -1,0 +1,135 @@
+========================================
+test-whiteBox.c 对比测试
+原策略 vs Lattice-MAB 策略
+========================================
+
+配置:
+  测试时间: 60秒
+  目标程序: /home/apulis-dev/code/AFLplusplus-dev/test-whiteBox.c
+  构建目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test
+
+清理残留的afl-fuzz进程...
+  清理旧输出目录（使用重命名策略）...
+使用工具:
+  afl-clang-fast: /home/apulis-dev/code/AFLplusplus-dev/afl-clang-fast
+  afl-fuzz: /home/apulis-dev/code/AFLplusplus-dev/afl-fuzz
+
+[0;32m[1/4] 编译 test-whiteBox.c...[0m
+[0;32m✓ 使用afl-clang-fast编译成功（带插桩）[0m
+
+[0;32m[2/4] 创建初始测试用例...[0m
+[0;32m✓ 测试用例创建完成[0m
+  验证程序是否能正常运行...
+  [0;32m✓ 程序可以正常运行[0m
+
+[0;32m[3/4] 运行对比测试（60秒/策略）...[0m
+
+[0;34m--- 测试original策略 ---[0m
+  清理旧输出目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original
+  运行时间: 60秒...
+  [1;33m警告: afl-fuzz 因超时被终止[0m
+  统计文件: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original/default/fuzzer_stats
+  [0;32m执行次数: 78023[0m
+  [0;32m发现边数: 32[0m
+  [0;32m崩溃数: 0[0m
+  [0;32m路径数: 0[0m
+  [0;32m循环数: 7[0m
+  [0;32m偏好路径: 0[0m
+
+[0;34m--- 测试lattice_mab策略 ---[0m
+  清理旧输出目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab
+  运行时间: 60秒...
+  [1;33m警告: afl-fuzz 超时，强制终止...[0m
+  [1;33m警告: afl-fuzz 异常退出，退出码: 124[0m
+  错误日志:
+    [1;92m[+] [0mTry parallel jobs - see /usr/local/share/doc/afl/fuzzing_in_depth.md#c-using-multiple-cores[0m
+    [1;94m[*] [0mSetting up output directories...[0m
+    [1;94m[*] [0mChecking CPU core loadout...[0m
+    [1;92m[+] [0mFound a free CPU core, try binding to #0.[0m
+    [1;94m[*] [0mValidating target binary...[0m
+    [1;94m[*] [0mScanning '/home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/testcases'...[0m
+    [1;94m[*] [0mCreating hard links for all input files...[0m
+    [1;92m[+] [0mLoaded a total of 4 seeds.[0m
+    [1;94m[*] [0mSpinning up the fork server...[0m
+    [1;92m[+] [0mAll right - new fork server model v1 is up.[0m
+    [1;94m[*] [0mTarget map size: 66[0m
+    [1;94m[*] [0mNo auto-generated dictionary tokens to reuse.[0m
+    [1;94m[*] [0mAttempting dry run with 'id:000000,time:0,execs:0,orig:input1.txt'...[0m
+    [1;90m    len = 4, map size = 13, exec speed = 800 us, hash = 120cca09a83439b6
+    [0m[1;94m[*] [0mAttempting dry run with 'id:000001,time:0,execs:0,orig:input2.txt'...[0m
+    [1;90m    len = 4, map size = 13, exec speed = 716 us, hash = 8ed73285be008aae
+    [0m[1;94m[*] [0mAttempting dry run with 'id:000002,time:0,execs:0,orig:input3.txt'...[0m
+    [1;90m    len = 6, map size = 14, exec speed = 716 us, hash = 3619adf8d4cad348
+    [0m[1;94m[*] [0mAttempting dry run with 'id:000003,time:0,execs:0,orig:input4.txt'...[0m
+    [1;90m    len = 6, map size = 12, exec speed = 707 us, hash = 0d88422d2b169d0e
+    [0m[1;92m[+] [0mAll test cases processed.[0m
+    [1;92m[+] [0mHere are some useful stats:
+    
+    [1;90m    Test case count : [0m2 favored, 0 variable, 0 ignored, 4 total
+    [1;90m       Bitmap range : [0m12 to 14 bits (average: 13.00 bits)
+    [1;90m        Exec timing : [0m707 to 800 us (average: 735 us)
+    [0m
+    [1;94m[*] [0m-t option specified. We'll use an exec timeout of 1000 ms.[0m
+    [1;92m[+] [0mAll set and ready to roll![0m
+    [1;94m[*] [0mFuzzing test case #0 (4 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=800, hits=0, map=13, ascii=0, run_time=0:00:00:00)...[0m
+  统计文件: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab/default/fuzzer_stats
+  [0;32m执行次数: 29[0m
+  [0;32m发现边数: 18[0m
+  [0;32m崩溃数: 0[0m
+  [0;32m路径数: 0[0m
+  [0;32m循环数: 0[0m
+  [0;32m偏好路径: 0[0m
+
+[0;32m[4/4] 生成对比报告...[0m
+========================================
+test-whiteBox.c 对比测试报告
+生成时间: Mon Nov 24 09:49:45 UTC 2025
+========================================
+
+测试配置:
+  目标程序: test-whiteBox.c
+  编译方式: afl-clang-fast
+  测试时间: 60秒/策略
+
+----------------------------------------
+原策略结果:
+----------------------------------------
+  执行次数: 78023
+  发现边数: 32
+  崩溃数: 0
+  路径数: 0
+  循环数: 7
+  偏好路径: 0
+  导入路径: 0
+
+----------------------------------------
+Lattice-MAB 策略结果:
+----------------------------------------
+  执行次数: 29
+  发现边数: 18
+  崩溃数: 0
+  路径数: 0
+  循环数: 0
+  偏好路径: 0
+  导入路径: 0
+
+----------------------------------------
+对比分析:
+----------------------------------------
+  执行次数改进: -99.96%
+  边覆盖率改进: -43.75%
+  循环数改进: -100.00%
+
+详细日志:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original.log
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab.log
+
+输出目录:
+  原策略: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/original
+  Lattice-MAB: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/lattice_mab
+
+
+[0;32m✓ 对比测试完成！[0m
+
+报告已保存到: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results/comparison_report.txt
+结果目录: /home/apulis-dev/code/AFLplusplus-dev/build_whitebox_test/results

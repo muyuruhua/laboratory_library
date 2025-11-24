@@ -1,0 +1,335 @@
+#!/bin/bash
+
+# 多次运行 test_whitebox.sh 脚本并汇总结果
+# 用法: ./run_multiple_tests.sh [运行次数]
+# 示例: ./run_multiple_tests.sh 5    # 运行5次
+#       ./run_multiple_tests.sh 10   # 运行10次
+#       ./run_multiple_tests.sh      # 默认运行5次
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_SCRIPT="$SCRIPT_DIR/test_whitebox.sh"
+RESULTS_DIR="$SCRIPT_DIR/multiple_test_results"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# 显示帮助信息
+show_help() {
+    echo "用法: $0 [选项] [运行次数]"
+    echo ""
+    echo "选项:"
+    echo "  -h, --help     显示此帮助信息"
+    echo ""
+    echo "参数:"
+    echo "  运行次数       要运行的测试次数（默认: 5）"
+    echo ""
+    echo "示例:"
+    echo "  $0              # 运行5次（默认）"
+    echo "  $0 5            # 运行5次"
+    echo "  $0 10           # 运行10次"
+    echo "  $0 --help       # 显示帮助信息"
+    echo ""
+}
+
+# 解析命令行参数
+RUN_COUNT=5  # 默认值
+
+if [ $# -gt 0 ]; then
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            # 检查是否为数字
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                RUN_COUNT=$1
+                if [ "$RUN_COUNT" -lt 1 ]; then
+                    echo -e "${RED}错误: 运行次数必须大于 0${NC}"
+                    exit 1
+                fi
+                if [ "$RUN_COUNT" -gt 100 ]; then
+                    echo -e "${YELLOW}警告: 运行次数超过 100，这可能需要很长时间${NC}"
+                    read -p "是否继续？(y/N): " -n 1 -r
+                    echo
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        exit 0
+                    fi
+                fi
+            else
+                echo -e "${RED}错误: 无效的参数 '$1'${NC}"
+                echo -e "${YELLOW}运行次数必须是数字${NC}"
+                echo ""
+                show_help
+                exit 1
+            fi
+            ;;
+    esac
+fi
+
+echo "========================================"
+echo "多次运行 test-whiteBox.c 对比测试"
+echo "运行次数: $RUN_COUNT"
+echo "========================================"
+echo ""
+
+# 检查测试脚本是否存在
+if [ ! -f "$TEST_SCRIPT" ]; then
+    echo -e "${RED}错误: 找不到测试脚本 $TEST_SCRIPT${NC}"
+    exit 1
+fi
+
+# 检查测试脚本是否有执行权限
+if [ ! -x "$TEST_SCRIPT" ]; then
+    echo -e "${YELLOW}警告: 测试脚本没有执行权限，正在添加...${NC}"
+    chmod +x "$TEST_SCRIPT"
+fi
+
+# 创建结果目录
+mkdir -p "$RESULTS_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+CURRENT_RUN_DIR="$RESULTS_DIR/run_$TIMESTAMP"
+mkdir -p "$CURRENT_RUN_DIR"
+
+echo "结果将保存到: $CURRENT_RUN_DIR"
+echo ""
+
+# 汇总文件
+SUMMARY_FILE="$CURRENT_RUN_DIR/summary.txt"
+{
+    echo "========================================"
+    echo "test-whiteBox.c 多次测试汇总报告"
+    echo "生成时间: $(date)"
+    echo "运行次数: $RUN_COUNT"
+    echo "========================================"
+    echo ""
+} > "$SUMMARY_FILE"
+
+# 统计变量
+TOTAL_ORIGINAL_EXECS=0
+TOTAL_LATTICE_EXECS=0
+TOTAL_ORIGINAL_EDGES=0
+TOTAL_LATTICE_EDGES=0
+TOTAL_ORIGINAL_CYCLES=0
+TOTAL_LATTICE_CYCLES=0
+SUCCESSFUL_RUNS=0
+
+# 函数：提取统计值
+extract_value() {
+    local file=$1
+    local key=$2
+    if [ -f "$file" ]; then
+        grep "^$key" "$file" | awk '{print $3}' | head -1
+    else
+        echo "0"
+    fi
+}
+
+# 运行测试
+for i in $(seq 1 $RUN_COUNT); do
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}运行第 $i/$RUN_COUNT 次测试...${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+    
+    RUN_DIR="$CURRENT_RUN_DIR/run_$i"
+    mkdir -p "$RUN_DIR"
+    
+    # 运行测试脚本，保存输出
+    if "$TEST_SCRIPT" 2>&1 | tee "$RUN_DIR/output.log"; then
+        
+        SUCCESSFUL_RUNS=$((SUCCESSFUL_RUNS + 1))
+        
+        # 查找统计文件
+        BUILD_DIR="$SCRIPT_DIR/build_whitebox_test"
+        ORIGINAL_STATS=$(find "$BUILD_DIR/results/original" -name "fuzzer_stats" -type f 2>/dev/null | head -1)
+        LATTICE_STATS=$(find "$BUILD_DIR/results/lattice_mab" -name "fuzzer_stats" -type f 2>/dev/null | head -1)
+        
+        if [ -n "$ORIGINAL_STATS" ] && [ -f "$ORIGINAL_STATS" ] && \
+           [ -n "$LATTICE_STATS" ] && [ -f "$LATTICE_STATS" ]; then
+            
+            # 提取统计值
+            ORIG_EXECS=$(extract_value "$ORIGINAL_STATS" "execs_done")
+            LATT_EXECS=$(extract_value "$LATTICE_STATS" "execs_done")
+            ORIG_EDGES=$(extract_value "$ORIGINAL_STATS" "edges_found")
+            LATT_EDGES=$(extract_value "$LATTICE_STATS" "edges_found")
+            ORIG_CYCLES=$(extract_value "$ORIGINAL_STATS" "cycles_done")
+            LATT_CYCLES=$(extract_value "$LATTICE_STATS" "cycles_done")
+            
+            # 确保值是数字
+            ORIG_EXECS=${ORIG_EXECS:-0}
+            LATT_EXECS=${LATT_EXECS:-0}
+            ORIG_EDGES=${ORIG_EDGES:-0}
+            LATT_EDGES=${LATT_EDGES:-0}
+            ORIG_CYCLES=${ORIG_CYCLES:-0}
+            LATT_CYCLES=${LATT_CYCLES:-0}
+            
+            # 累加统计
+            TOTAL_ORIGINAL_EXECS=$((TOTAL_ORIGINAL_EXECS + ORIG_EXECS))
+            TOTAL_LATTICE_EXECS=$((TOTAL_LATTICE_EXECS + LATT_EXECS))
+            TOTAL_ORIGINAL_EDGES=$((TOTAL_ORIGINAL_EDGES + ORIG_EDGES))
+            TOTAL_LATTICE_EDGES=$((TOTAL_LATTICE_EDGES + LATT_EDGES))
+            TOTAL_ORIGINAL_CYCLES=$((TOTAL_ORIGINAL_CYCLES + ORIG_CYCLES))
+            TOTAL_LATTICE_CYCLES=$((TOTAL_LATTICE_CYCLES + LATT_CYCLES))
+            
+            # 保存本次结果
+            {
+                echo "----------------------------------------"
+                echo "第 $i 次测试结果:"
+                echo "----------------------------------------"
+                echo "原策略:"
+                echo "  执行次数: $ORIG_EXECS"
+                echo "  发现边数: $ORIG_EDGES"
+                echo "  循环数: $ORIG_CYCLES"
+                echo ""
+                echo "Lattice-MAB 策略:"
+                echo "  执行次数: $LATT_EXECS"
+                echo "  发现边数: $LATT_EDGES"
+                echo "  循环数: $LATT_CYCLES"
+                echo ""
+                
+                # 计算改进
+                if [ "$ORIG_EXECS" -gt 0 ]; then
+                    EXECS_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($LATT_EXECS - $ORIG_EXECS) * 100 / $ORIG_EXECS}")
+                    echo "执行次数改进: ${EXECS_IMPROVEMENT}%"
+                fi
+                
+                if [ "$ORIG_CYCLES" -gt 0 ]; then
+                    CYCLES_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($LATT_CYCLES - $ORIG_CYCLES) * 100 / $ORIG_CYCLES}")
+                    echo "循环数改进: ${CYCLES_IMPROVEMENT}%"
+                fi
+                
+                # 计算效率
+                if [ "$ORIG_EXECS" -gt 0 ] && [ "$LATT_EXECS" -gt 0 ]; then
+                    ORIG_EFFICIENCY=$(awk "BEGIN {printf \"%.6f\", $ORIG_EDGES / $ORIG_EXECS}")
+                    LATT_EFFICIENCY=$(awk "BEGIN {printf \"%.6f\", $LATT_EDGES / $LATT_EXECS}")
+                    echo "原策略覆盖率效率: $ORIG_EFFICIENCY"
+                    echo "Lattice-MAB 覆盖率效率: $LATT_EFFICIENCY"
+                    
+                    if [ "$ORIG_EFFICIENCY" != "0" ]; then
+                        EFF_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($LATT_EFFICIENCY - $ORIG_EFFICIENCY) * 100 / $ORIG_EFFICIENCY}")
+                        echo "覆盖率效率改进: ${EFF_IMPROVEMENT}%"
+                    fi
+                fi
+                echo ""
+            } >> "$SUMMARY_FILE"
+            
+            echo -e "${GREEN}✓ 第 $i 次测试完成${NC}"
+            echo "  原策略: execs=$ORIG_EXECS, edges=$ORIG_EDGES, cycles=$ORIG_CYCLES"
+            echo "  Lattice-MAB: execs=$LATT_EXECS, edges=$LATT_EDGES, cycles=$LATT_CYCLES"
+            
+        else
+            echo -e "${YELLOW}⚠ 第 $i 次测试完成，但无法读取统计信息${NC}"
+            echo "  原策略统计文件: ${ORIGINAL_STATS:-未找到}"
+            echo "  Lattice-MAB 统计文件: ${LATTICE_STATS:-未找到}"
+        fi
+        
+    else
+        echo -e "${RED}✗ 第 $i 次测试失败${NC}"
+        {
+            echo "----------------------------------------"
+            echo "第 $i 次测试: 失败"
+            echo "----------------------------------------"
+            echo ""
+        } >> "$SUMMARY_FILE"
+    fi
+    
+    echo ""
+    
+    # 如果不是最后一次，等待一下
+    if [ $i -lt $RUN_COUNT ]; then
+        echo "等待 2 秒后继续..."
+        sleep 2
+        echo ""
+    fi
+    
+done
+
+# 计算平均值
+if [ $SUCCESSFUL_RUNS -gt 0 ]; then
+    
+    AVG_ORIG_EXECS=$((TOTAL_ORIGINAL_EXECS / SUCCESSFUL_RUNS))
+    AVG_LATT_EXECS=$((TOTAL_LATTICE_EXECS / SUCCESSFUL_RUNS))
+    AVG_ORIG_EDGES=$((TOTAL_ORIGINAL_EDGES / SUCCESSFUL_RUNS))
+    AVG_LATT_EDGES=$((TOTAL_LATTICE_EDGES / SUCCESSFUL_RUNS))
+    AVG_ORIG_CYCLES=$((TOTAL_ORIGINAL_CYCLES / SUCCESSFUL_RUNS))
+    AVG_LATT_CYCLES=$((TOTAL_LATTICE_CYCLES / SUCCESSFUL_RUNS))
+    
+    # 生成汇总报告
+    {
+        echo "========================================"
+        echo "汇总统计（$SUCCESSFUL_RUNS 次成功测试）"
+        echo "========================================"
+        echo ""
+        echo "平均值:"
+        echo "  原策略:"
+        echo "    执行次数: $AVG_ORIG_EXECS"
+        echo "    发现边数: $AVG_ORIG_EDGES"
+        echo "    循环数: $AVG_ORIG_CYCLES"
+        echo ""
+        echo "  Lattice-MAB 策略:"
+        echo "    执行次数: $AVG_LATT_EXECS"
+        echo "    发现边数: $AVG_LATT_EDGES"
+        echo "    循环数: $AVG_LATT_CYCLES"
+        echo ""
+        
+        # 计算平均改进
+        if [ "$AVG_ORIG_EXECS" -gt 0 ]; then
+            AVG_EXECS_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($AVG_LATT_EXECS - $AVG_ORIG_EXECS) * 100 / $AVG_ORIG_EXECS}")
+            echo "平均执行次数改进: ${AVG_EXECS_IMPROVEMENT}%"
+        fi
+        
+        if [ "$AVG_ORIG_CYCLES" -gt 0 ]; then
+            AVG_CYCLES_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($AVG_LATT_CYCLES - $AVG_ORIG_CYCLES) * 100 / $AVG_ORIG_CYCLES}")
+            echo "平均循环数改进: ${AVG_CYCLES_IMPROVEMENT}%"
+        fi
+        
+        # 计算平均效率
+        if [ "$AVG_ORIG_EXECS" -gt 0 ] && [ "$AVG_LATT_EXECS" -gt 0 ]; then
+            AVG_ORIG_EFFICIENCY=$(awk "BEGIN {printf \"%.6f\", $AVG_ORIG_EDGES / $AVG_ORIG_EXECS}")
+            AVG_LATT_EFFICIENCY=$(awk "BEGIN {printf \"%.6f\", $AVG_LATT_EDGES / $AVG_LATT_EXECS}")
+            echo "平均原策略覆盖率效率: $AVG_ORIG_EFFICIENCY"
+            echo "平均 Lattice-MAB 覆盖率效率: $AVG_LATT_EFFICIENCY"
+            
+            if [ "$AVG_ORIG_EFFICIENCY" != "0" ]; then
+                AVG_EFF_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", ($AVG_LATT_EFFICIENCY - $AVG_ORIG_EFFICIENCY) * 100 / $AVG_ORIG_EFFICIENCY}")
+                echo "平均覆盖率效率改进: ${AVG_EFF_IMPROVEMENT}%"
+            fi
+        fi
+        echo ""
+    } >> "$SUMMARY_FILE"
+    
+    # 显示汇总
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}测试完成！${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo ""
+    echo "成功运行: $SUCCESSFUL_RUNS/$RUN_COUNT"
+    echo ""
+    echo "平均结果:"
+    echo "  原策略: execs=$AVG_ORIG_EXECS, edges=$AVG_ORIG_EDGES, cycles=$AVG_ORIG_CYCLES"
+    echo "  Lattice-MAB: execs=$AVG_LATT_EXECS, edges=$AVG_LATT_EDGES, cycles=$AVG_LATT_CYCLES"
+    echo ""
+    
+    if [ "$AVG_ORIG_EXECS" -gt 0 ]; then
+        echo "平均执行次数改进: ${AVG_EXECS_IMPROVEMENT}%"
+    fi
+    if [ "$AVG_ORIG_CYCLES" -gt 0 ]; then
+        echo "平均循环数改进: ${AVG_CYCLES_IMPROVEMENT}%"
+    fi
+    if [ "$AVG_ORIG_EFFICIENCY" != "0" ]; then
+        echo "平均覆盖率效率改进: ${AVG_EFF_IMPROVEMENT}%"
+    fi
+    echo ""
+    echo "详细报告已保存到: $SUMMARY_FILE"
+    
+else
+    echo -e "${RED}错误: 所有测试都失败了${NC}"
+    exit 1
+fi
+
