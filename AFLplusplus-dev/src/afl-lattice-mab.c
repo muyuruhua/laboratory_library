@@ -289,22 +289,22 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
       if (efficiency < MIN_EFFICIENCY_RATIO) {
         
         /* Very strong penalty for very inefficient arms */
-        efficiency_factor = 0.2;  /* Reduce UCB by 80% */
+        efficiency_factor = 0.1;  /* Reduce UCB by 90% */
         
       } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
         
         /* Strong penalty for moderately inefficient arms */
-        efficiency_factor = 0.4;  /* Reduce UCB by 60% */
+        efficiency_factor = 0.3;  /* Reduce UCB by 70% */
+        
+      } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
+        
+        /* Moderate penalty for slightly inefficient arms */
+        efficiency_factor = 0.5;  /* Reduce UCB by 50% */
         
       } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
         
-        /* Moderate penalty for slightly inefficient arms */
-        efficiency_factor = 0.6;  /* Reduce UCB by 40% */
-        
-      } else if (efficiency < MIN_EFFICIENCY_RATIO * 10) {
-        
         /* Small penalty for marginally inefficient arms */
-        efficiency_factor = 0.8;  /* Reduce UCB by 20% */
+        efficiency_factor = 0.7;  /* Reduce UCB by 30% */
         
       }
       
@@ -384,18 +384,22 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
             /* Calculate efficiency: reward per pull */
             double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
             
-          /* Progressive penalty based on efficiency (more lenient) */
+          /* More aggressive progressive penalty based on efficiency */
           if (efficiency < MIN_EFFICIENCY_RATIO) {
             
-            efficiency_factor = 0.5;  /* Reduce UCB by 50% for very inefficient arms */
+            efficiency_factor = 0.1;  /* Reduce UCB by 90% for very inefficient arms */
+            
+          } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
+            
+            efficiency_factor = 0.3;  /* Reduce UCB by 70% for moderately inefficient arms */
             
           } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
             
-            efficiency_factor = 0.7;  /* Reduce UCB by 30% for moderately inefficient arms */
+            efficiency_factor = 0.5;  /* Reduce UCB by 50% for slightly inefficient arms */
             
           } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
             
-            efficiency_factor = 0.85;  /* Reduce UCB by 15% for slightly inefficient arms */
+            efficiency_factor = 0.7;  /* Reduce UCB by 30% for marginally inefficient arms */
             
           }
             
@@ -406,7 +410,7 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
         } else {
           
           /* Unexplored arms get moderate UCB to encourage exploration */
-          mab->arms[i].ucb_value = 1.0;  /* Increased from 0.5 to encourage more exploration */
+          mab->arms[i].ucb_value = 0.5;  /* Reduced to favor exploitation over exploration */
           
         }
         
@@ -566,8 +570,8 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
       
     } else {
       
-      /* Larger bonus for unexplored mutations to encourage exploration */
-      reward += 1.0;  /* Increased from 0.1 to encourage more exploration */
+      /* Moderate bonus for unexplored mutations to encourage exploration */
+      reward += 0.5;  /* Reduced to favor exploitation over exploration */
       
     }
     
@@ -585,21 +589,21 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
       /* Only apply penalty if efficiency is significantly below threshold */
       if (current_efficiency < MIN_EFFICIENCY_RATIO && (new_edges + new_paths) == 0) {
         
-        /* Reduced penalty to avoid premature abandonment */
+        /* Increased penalty to abandon inefficient mutations earlier */
         double penalty = EFFICIENCY_PENALTY_FACTOR * 
-                        (double)vec->usage_count / 100.0;  /* Reduced from 50.0 to 100.0 */
+                        (double)vec->usage_count / 50.0;  /* Increased penalty */
         reward -= penalty;
         
       }
       
     }
     
-    /* Reduced penalty for zero coverage: only if usage is very high */
-    if (vec->usage_count > EFFICIENCY_THRESHOLD * 2 && (new_edges + new_paths) == 0) {
+    /* Increased penalty for zero coverage: if usage exceeds threshold */
+    if (vec->usage_count > EFFICIENCY_THRESHOLD && (new_edges + new_paths) == 0) {
       
-      /* More lenient progressive penalty */
+      /* More aggressive progressive penalty */
       double progressive_penalty = EFFICIENCY_PENALTY_FACTOR * 
-                                  (double)vec->usage_count / 80.0;  /* Reduced from 30.0 to 80.0 */
+                                  (double)vec->usage_count / 40.0;  /* Increased penalty */
       reward -= progressive_penalty;
       
     }
@@ -643,21 +647,24 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
   u32 best_mutation = base_mutation;
   double best_reward = ctx->mab.arms[base_mutation].avg_reward;
   
-  /* Explore neighbors more frequently to find better mutations */
+  /* Explore neighbors less frequently to save executions */
   bool should_explore_neighbors = false;
   if (selected_vec->usage_count > 0) {
     
     double base_efficiency = best_reward / (double)(selected_vec->usage_count + 1);
-    /* Explore if base is inefficient OR if we haven't explored much */
-    if (base_efficiency < MIN_EFFICIENCY_RATIO * 5 || selected_vec->usage_count < 20) {
+    /* Only explore if base is very inefficient AND we haven't explored much */
+    if (base_efficiency < MIN_EFFICIENCY_RATIO * 2 && selected_vec->usage_count < 10) {
       
-      should_explore_neighbors = true;  /* Explore more frequently */
+      should_explore_neighbors = true;  /* Explore only when necessary */
       
     }
     
   } else {
     
-    should_explore_neighbors = true;  /* Always explore if base is unexplored */
+    /* Only explore if we have very few total mutations to avoid wasting executions */
+    if (ctx->total_mutations < 50) {
+      should_explore_neighbors = true;  /* Limited exploration for unexplored base */
+    }
     
   }
   
@@ -693,11 +700,11 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
           
         }
         
-        /* Prefer neighbors with better rewards or efficiency */
-        if (neighbor_reward > best_reward * 1.1 || 
-            (neighbor_efficiency > base_efficiency * 1.05 && neighbor_reward >= best_reward * 0.9)) {
+        /* Prefer neighbors with significantly better rewards or efficiency */
+        if (neighbor_reward > best_reward * 1.2 || 
+            (neighbor_efficiency > base_efficiency * 1.1 && neighbor_reward >= best_reward * 1.1)) {
           
-          /* Increased exploration probability */
+          /* Reduced exploration probability to save executions */
           if (rand_below(afl, 100) < NEIGHBOR_EXPLORE_PROB) {
             
             best_mutation = neighbor_idx;
@@ -705,10 +712,10 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
             
           }
           
-        } else if (neighbor_reward > best_reward * 1.3 || 
-                   (neighbor_efficiency > base_efficiency * 1.15 && neighbor_reward >= best_reward)) {
+        } else if (neighbor_reward > best_reward * 1.5 || 
+                   (neighbor_efficiency > base_efficiency * 1.2 && neighbor_reward >= best_reward * 1.2)) {
           
-          /* For significant improvements, always switch */
+          /* For very significant improvements, switch */
           best_mutation = neighbor_idx;
           best_reward = neighbor_reward;
           
