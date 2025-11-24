@@ -195,18 +195,40 @@ run_fuzz_test() {
     local fuzzer_id="${strategy_name}_$$_$(date +%s)"
     
     # 清理旧输出（处理 NFS 文件系统的延迟删除问题）
-    # 注意：由于使用了唯一的 fuzzer_id，理论上不会冲突，但为了安全仍然清理
+    # 注意：由于使用了唯一的 fuzzer_id，每次运行会在 output_dir 下创建新的子目录
+    # 所以理论上不会冲突，但为了保持目录整洁，我们尝试清理旧的子目录
     if [ -d "$output_dir" ]; then
-        # 先尝试正常删除（忽略 NFS 相关的错误）
-        rm -rf "$output_dir" 2>&1 | grep -v "Device or resource busy" | grep -v "Stale file handle" || true
-        # 等待 NFS 文件系统完成删除操作（最多等待 3 秒）
-        local wait_count=0
-        while [ -d "$output_dir" ] && [ $wait_count -lt 6 ]; do
-            sleep 0.5
-            wait_count=$((wait_count + 1))
-            # 再次尝试删除（忽略错误）
-            rm -rf "$output_dir" 2>&1 | grep -v "Device or resource busy" | grep -v "Stale file handle" || true
+        # 先尝试删除所有子目录（这些是旧的 fuzzer_id 目录）
+        # 使用 find 命令逐个删除，避免 NFS 的 "Directory not empty" 错误
+        find "$output_dir" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>&1 | \
+            grep -v "Device or resource busy" | \
+            grep -v "Stale file handle" | \
+            grep -v "Directory not empty" || true
+        
+        # 等待 NFS 文件系统完成删除操作
+        sleep 1
+        
+        # 如果目录仍然不为空，尝试再次删除（最多重试 3 次）
+        local retry_count=0
+        while [ -d "$output_dir" ] && [ $retry_count -lt 3 ]; do
+            # 检查目录是否为空（使用 find 更可靠）
+            if [ -n "$(find "$output_dir" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)" ]; then
+                find "$output_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>&1 | \
+                    grep -v "Device or resource busy" | \
+                    grep -v "Stale file handle" | \
+                    grep -v "Directory not empty" || true
+                sleep 1
+                retry_count=$((retry_count + 1))
+            else
+                # 目录已为空，退出循环
+                break
+            fi
         done
+        
+        # 如果目录为空，尝试删除目录本身（如果失败也没关系，mkdir -p 会处理）
+        if [ -d "$output_dir" ] && [ -z "$(find "$output_dir" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)" ]; then
+            rmdir "$output_dir" 2>/dev/null || true
+        fi
     fi
     mkdir -p "$output_dir"
     
