@@ -191,8 +191,23 @@ run_fuzz_test() {
     
     echo -e "${BLUE}--- 测试${strategy_name}策略 ---${NC}"
     
-    # 清理旧输出
-    rm -rf "$output_dir"
+    # 生成唯一的 fuzzer ID，避免多次运行时的目录冲突
+    local fuzzer_id="${strategy_name}_$$_$(date +%s)"
+    
+    # 清理旧输出（处理 NFS 文件系统的延迟删除问题）
+    # 注意：由于使用了唯一的 fuzzer_id，理论上不会冲突，但为了安全仍然清理
+    if [ -d "$output_dir" ]; then
+        # 先尝试正常删除（忽略 NFS 相关的错误）
+        rm -rf "$output_dir" 2>&1 | grep -v "Device or resource busy" | grep -v "Stale file handle" || true
+        # 等待 NFS 文件系统完成删除操作（最多等待 3 秒）
+        local wait_count=0
+        while [ -d "$output_dir" ] && [ $wait_count -lt 6 ]; do
+            sleep 0.5
+            wait_count=$((wait_count + 1))
+            # 再次尝试删除（忽略错误）
+            rm -rf "$output_dir" 2>&1 | grep -v "Device or resource busy" | grep -v "Stale file handle" || true
+        done
+    fi
     mkdir -p "$output_dir"
     
     # 设置环境变量
@@ -216,8 +231,9 @@ run_fuzz_test() {
     export AFL_QUIET=1
     
     # 运行 afl-fuzz（后台运行）
+    # 使用 -S 参数指定唯一的 fuzzer ID，避免多次运行时的目录冲突
     # 设置执行超时为 1000ms（1秒），避免单个测试用例执行时间过长导致卡住
-    timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -m none -t 1000 \
+    timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -S "$fuzzer_id" -m none -t 1000 \
         -- "$TARGET_BINARY" > "$RESULTS_DIR/${strategy_name}.log" 2>&1 &
     local fuzz_pid=$!
     
