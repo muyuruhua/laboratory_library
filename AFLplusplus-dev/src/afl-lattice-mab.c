@@ -9,6 +9,7 @@
 #include "afl-lattice-mab.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* Define MUT_* constants locally to avoid including afl-mutations.h
    which contains global variable definitions that cause duplicate symbols */
@@ -225,6 +226,165 @@ bool are_vectors_orthogonal(const mutation_vector_t *v1,
   
 }
 
+/* Initialize UCB heap */
+void ucb_heap_init(ucb_heap_t *heap) {
+
+  if (!heap) { return; }
+  
+  memset(heap, 0, sizeof(ucb_heap_t));
+  heap->capacity = LATTICE_DIMENSION;
+  heap->size = 0;
+  
+}
+
+/* Heap helper functions */
+static void heap_swap(heap_node_t *a, heap_node_t *b) {
+
+  heap_node_t temp = *a;
+  *a = *b;
+  *b = temp;
+  
+}
+
+/* Heapify up (for insert and increase key) */
+static void heapify_up(ucb_heap_t *heap, u32 index, mab_arm_t *arms) {
+
+  if (index == 0) { return; }
+  
+  u32 parent = (index - 1) / 2;
+  
+  if (heap->nodes[parent].ucb_value < heap->nodes[index].ucb_value) {
+    
+    heap_swap(&heap->nodes[parent], &heap->nodes[index]);
+    
+    /* Update heap_index in arm */
+    u32 parent_arm = heap->nodes[parent].arm_index;
+    u32 index_arm = heap->nodes[index].arm_index;
+    arms[parent_arm].heap_index = parent;
+    arms[index_arm].heap_index = index;
+    
+    heapify_up(heap, parent, arms);
+    
+  }
+  
+}
+
+/* Heapify down (for delete and decrease key) */
+static void heapify_down(ucb_heap_t *heap, u32 index, mab_arm_t *arms) {
+
+  u32 left = 2 * index + 1;
+  u32 right = 2 * index + 2;
+  u32 largest = index;
+  
+  if (left < heap->size && 
+      heap->nodes[left].ucb_value > heap->nodes[largest].ucb_value) {
+    
+    largest = left;
+    
+  }
+  
+  if (right < heap->size && 
+      heap->nodes[right].ucb_value > heap->nodes[largest].ucb_value) {
+    
+    largest = right;
+    
+  }
+  
+  if (largest != index) {
+    
+    heap_swap(&heap->nodes[index], &heap->nodes[largest]);
+    
+    /* Update heap_index in arm */
+    u32 index_arm = heap->nodes[index].arm_index;
+    u32 largest_arm = heap->nodes[largest].arm_index;
+    arms[index_arm].heap_index = index;
+    arms[largest_arm].heap_index = largest;
+    
+    heapify_down(heap, largest, arms);
+    
+  }
+  
+}
+
+/* Insert node into heap */
+void ucb_heap_insert(ucb_heap_t *heap, u32 arm_index, double ucb_value) {
+
+  if (!heap || heap->size >= heap->capacity) { return; }
+  
+  u32 index = heap->size++;
+  heap->nodes[index].arm_index = arm_index;
+  heap->nodes[index].ucb_value = ucb_value;
+  
+  /* Note: heap_index will be set by heapify_up or caller */
+  
+}
+
+/* Update UCB value in heap */
+void ucb_heap_update(ucb_heap_t *heap, u32 heap_index, double new_ucb_value, 
+                     mab_arm_t *arms) {
+
+  if (!heap || heap_index >= heap->size) { return; }
+  
+  double old_value = heap->nodes[heap_index].ucb_value;
+  heap->nodes[heap_index].ucb_value = new_ucb_value;
+  
+  if (new_ucb_value > old_value) {
+    
+    /* Value increased, move up */
+    heapify_up(heap, heap_index, arms);
+    
+  } else if (new_ucb_value < old_value) {
+    
+    /* Value decreased, move down */
+    heapify_down(heap, heap_index, arms);
+    
+  }
+  
+}
+
+/* Get maximum UCB value (peek at root) */
+u32 ucb_heap_peek_max(ucb_heap_t *heap) {
+
+  if (!heap || heap->size == 0) { return 0; }
+  
+  return heap->nodes[0].arm_index;
+  
+}
+
+/* Rebuild heap from scratch (used when UCB values change significantly) */
+void ucb_heap_rebuild(mab_selector_t *mab) {
+
+  if (!mab) { return; }
+  
+  ucb_heap_t *heap = &mab->ucb_heap;
+  heap->size = 0;
+  
+  /* Insert all arms into heap */
+  for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
+    
+    u32 index = heap->size++;
+    heap->nodes[index].arm_index = i;
+    heap->nodes[index].ucb_value = mab->arms[i].ucb_value;
+    mab->arms[i].heap_index = index;
+    
+  }
+  
+  /* Build heap by heapifying from bottom up */
+  for (u32 i = (heap->size - 1) / 2; i > 0; --i) {
+    
+    heapify_down(heap, i - 1, mab->arms);
+    
+  }
+  
+  /* Final heapify at root */
+  if (heap->size > 0) {
+    
+    heapify_down(heap, 0, mab->arms);
+    
+  }
+  
+}
+
 /* Initialize MAB selector */
 void mab_init(mab_selector_t *mab, u32 strategy_type) {
 
@@ -234,6 +394,10 @@ void mab_init(mab_selector_t *mab, u32 strategy_type) {
   mab->strategy_type = strategy_type;
   mab->arm_count = LATTICE_DIMENSION;
   mab->exploration_rate = MAB_ALPHA;
+  mab->use_heap = true;  /* Enable heap optimization by default */
+  
+  /* Initialize heap */
+  ucb_heap_init(&mab->ucb_heap);
   
   /* Initialize all arms */
   for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
@@ -244,6 +408,7 @@ void mab_init(mab_selector_t *mab, u32 strategy_type) {
     mab->arms[i].avg_reward = 0.0;
     mab->arms[i].ucb_value = 1e10;  /* High initial value for exploration */
     mab->arms[i].epsilon_prob = 1.0 / mab->arm_count;  /* Uniform initial */
+    mab->arms[i].heap_index = LATTICE_DIMENSION;  /* Invalid index initially */
     
   }
   
@@ -255,6 +420,9 @@ void mab_init(mab_selector_t *mab, u32 strategy_type) {
   }
   mab->reward_index = 0;
   mab->avg_recent_reward = 0.0;
+  
+  /* Build initial heap */
+  ucb_heap_rebuild(mab);
   
 }
 
@@ -269,6 +437,10 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
   arm->pull_count++;
   arm->total_reward += (u64)(reward * 1000);  /* Scale for integer storage */
   arm->avg_reward = (double)arm->total_reward / (arm->pull_count * 1000.0);
+  
+  /* Calculate new UCB value */
+  double old_ucb = arm->ucb_value;
+  double new_ucb = old_ucb;
   
   /* Update UCB value with aggressive efficiency-based weighting */
   if (arm->pull_count > 0 && mab->total_pulls > 0) {
@@ -310,7 +482,16 @@ void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward) {
       
     }
     
-    arm->ucb_value = (arm->avg_reward + exploration) * efficiency_factor;
+    new_ucb = (arm->avg_reward + exploration) * efficiency_factor;
+    arm->ucb_value = new_ucb;
+    
+  }
+  
+  /* Update heap if UCB value changed and heap is enabled */
+  if (mab->use_heap && arm->heap_index < mab->ucb_heap.size && 
+      fabs(new_ucb - old_ucb) > 1e-9) {
+    
+    ucb_heap_update(&mab->ucb_heap, arm->heap_index, new_ucb, mab->arms);
     
   }
   
@@ -352,72 +533,162 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
     
     case 0: {  /* UCB (Upper Confidence Bound) with efficiency weighting and direct filtering */
       
-      double max_ucb = -1e10;
-      for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
+      if (mab->use_heap) {
         
-        /* Direct efficiency filtering: skip arms with very low efficiency */
-        if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
+        /* Optimized path: use heap for O(log n) selection */
+        /* First, update all UCB values (total_pulls changed) */
+        for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
           
-          double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
-          
-          /* Skip arms with efficiency below minimum threshold */
-          if (efficiency < MIN_EFFICIENCY_RATIO) {
-            
-            continue;  /* Skip this arm completely */
-            
-          }
-          
-        }
-        
-        /* Update UCB before selection */
-        if (mab->arms[i].pull_count > 0) {
-          
-          /* Reduced exploration term to favor exploitation */
-          double exploration = MAB_ALPHA * 
-                              sqrt(log((double)mab->total_pulls) / 
-                                   (double)mab->arms[i].pull_count);
-          
-          /* Efficiency factor: penalize arms with high pull count but low reward */
-          double efficiency_factor = 1.0;
+          /* Direct efficiency filtering: skip arms with very low efficiency */
           if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
             
-            /* Calculate efficiency: reward per pull */
             double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
             
-          /* More aggressive progressive penalty based on efficiency */
-          if (efficiency < MIN_EFFICIENCY_RATIO) {
-            
-            efficiency_factor = 0.1;  /* Reduce UCB by 90% for very inefficient arms */
-            
-          } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
-            
-            efficiency_factor = 0.3;  /* Reduce UCB by 70% for moderately inefficient arms */
-            
-          } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
-            
-            efficiency_factor = 0.5;  /* Reduce UCB by 50% for slightly inefficient arms */
-            
-          } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
-            
-            efficiency_factor = 0.7;  /* Reduce UCB by 30% for marginally inefficient arms */
-            
-          }
+            /* Skip arms with efficiency below minimum threshold */
+            if (efficiency < MIN_EFFICIENCY_RATIO) {
+              
+              /* Set UCB to very low value so it won't be selected */
+              if (mab->arms[i].heap_index < mab->ucb_heap.size) {
+                
+                ucb_heap_update(&mab->ucb_heap, mab->arms[i].heap_index, -1e10, mab->arms);
+                
+              }
+              continue;
+              
+            }
             
           }
           
-          mab->arms[i].ucb_value = (mab->arms[i].avg_reward + exploration) * efficiency_factor;
+          /* Calculate new UCB value */
+          double new_ucb = 0.0;
+          if (mab->arms[i].pull_count > 0) {
+            
+            /* Reduced exploration term to favor exploitation */
+            double exploration = MAB_ALPHA * 
+                                sqrt(log((double)mab->total_pulls) / 
+                                     (double)mab->arms[i].pull_count);
+            
+            /* Efficiency factor: penalize arms with high pull count but low reward */
+            double efficiency_factor = 1.0;
+            if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
+              
+              /* Calculate efficiency: reward per pull */
+              double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+              
+              /* More aggressive progressive penalty based on efficiency */
+              if (efficiency < MIN_EFFICIENCY_RATIO) {
+                
+                efficiency_factor = 0.1;  /* Reduce UCB by 90% for very inefficient arms */
+                
+              } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
+                
+                efficiency_factor = 0.3;  /* Reduce UCB by 70% for moderately inefficient arms */
+                
+              } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
+                
+                efficiency_factor = 0.5;  /* Reduce UCB by 50% for slightly inefficient arms */
+                
+              } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
+                
+                efficiency_factor = 0.7;  /* Reduce UCB by 30% for marginally inefficient arms */
+                
+              }
+              
+            }
+            
+            new_ucb = (mab->arms[i].avg_reward + exploration) * efficiency_factor;
+            
+          } else {
+            
+            /* Unexplored arms get moderate UCB to encourage exploration */
+            new_ucb = 0.5;  /* Reduced to favor exploitation over exploration */
+            
+          }
           
-        } else {
-          
-          /* Unexplored arms get moderate UCB to encourage exploration */
-          mab->arms[i].ucb_value = 0.5;  /* Reduced to favor exploitation over exploration */
+          /* Update UCB value and heap */
+          mab->arms[i].ucb_value = new_ucb;
+          if (mab->arms[i].heap_index < mab->ucb_heap.size) {
+            
+            ucb_heap_update(&mab->ucb_heap, mab->arms[i].heap_index, new_ucb, mab->arms);
+            
+          }
           
         }
         
-        if (mab->arms[i].ucb_value > max_ucb) {
+        /* Get maximum UCB from heap - O(1) */
+        selected_arm = ucb_heap_peek_max(&mab->ucb_heap);
+        
+      } else {
+        
+        /* Fallback: original O(n) linear scan */
+        double max_ucb = -1e10;
+        for (u32 i = 0; i < mab->arm_count && i < MUT_MAX; ++i) {
           
-          max_ucb = mab->arms[i].ucb_value;
-          selected_arm = i;
+          /* Direct efficiency filtering: skip arms with very low efficiency */
+          if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
+            
+            double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+            
+            /* Skip arms with efficiency below minimum threshold */
+            if (efficiency < MIN_EFFICIENCY_RATIO) {
+              
+              continue;  /* Skip this arm completely */
+              
+            }
+            
+          }
+          
+          /* Update UCB before selection */
+          if (mab->arms[i].pull_count > 0) {
+            
+            /* Reduced exploration term to favor exploitation */
+            double exploration = MAB_ALPHA * 
+                                sqrt(log((double)mab->total_pulls) / 
+                                     (double)mab->arms[i].pull_count);
+            
+            /* Efficiency factor: penalize arms with high pull count but low reward */
+            double efficiency_factor = 1.0;
+            if (mab->arms[i].pull_count > EFFICIENCY_THRESHOLD) {
+              
+              /* Calculate efficiency: reward per pull */
+              double efficiency = mab->arms[i].avg_reward / (double)mab->arms[i].pull_count;
+              
+            /* More aggressive progressive penalty based on efficiency */
+            if (efficiency < MIN_EFFICIENCY_RATIO) {
+              
+              efficiency_factor = 0.1;  /* Reduce UCB by 90% for very inefficient arms */
+              
+            } else if (efficiency < MIN_EFFICIENCY_RATIO * 2) {
+              
+              efficiency_factor = 0.3;  /* Reduce UCB by 70% for moderately inefficient arms */
+              
+            } else if (efficiency < MIN_EFFICIENCY_RATIO * 3) {
+              
+              efficiency_factor = 0.5;  /* Reduce UCB by 50% for slightly inefficient arms */
+              
+            } else if (efficiency < MIN_EFFICIENCY_RATIO * 5) {
+              
+              efficiency_factor = 0.7;  /* Reduce UCB by 30% for marginally inefficient arms */
+              
+            }
+              
+            }
+            
+            mab->arms[i].ucb_value = (mab->arms[i].avg_reward + exploration) * efficiency_factor;
+            
+          } else {
+            
+            /* Unexplored arms get moderate UCB to encourage exploration */
+            mab->arms[i].ucb_value = 0.5;  /* Reduced to favor exploitation over exploration */
+            
+          }
+          
+          if (mab->arms[i].ucb_value > max_ucb) {
+            
+            max_ucb = mab->arms[i].ucb_value;
+            selected_arm = i;
+            
+          }
           
         }
         

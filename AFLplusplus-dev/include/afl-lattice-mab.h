@@ -74,8 +74,26 @@ typedef struct {
   double avg_reward;          /* Average reward */
   double ucb_value;           /* Upper Confidence Bound */
   double epsilon_prob;        /* Probability for epsilon-greedy */
+  u32 heap_index;             /* Index in heap array (for O(log n) updates) */
   
 } mab_arm_t;
+
+/* Heap node for priority queue optimization */
+typedef struct {
+
+  u32 arm_index;              /* Index to mab_arm_t in arms array */
+  double ucb_value;            /* UCB value (heap key) */
+  
+} heap_node_t;
+
+/* Priority queue (max heap) for efficient UCB selection */
+typedef struct {
+
+  heap_node_t nodes[LATTICE_DIMENSION];  /* Heap array */
+  u32 size;                    /* Current heap size */
+  u32 capacity;                /* Maximum capacity */
+  
+} ucb_heap_t;
 
 /* MAB Strategy Selector */
 typedef struct {
@@ -85,6 +103,10 @@ typedef struct {
   u64 total_pulls;            /* Total number of arm pulls */
   u32 strategy_type;          /* 0=UCB, 1=Epsilon-Greedy, 2=Thompson Sampling */
   double exploration_rate;    /* Current exploration rate */
+  
+  /* Priority queue for O(log n) selection */
+  ucb_heap_t ucb_heap;
+  bool use_heap;              /* Whether to use heap optimization */
   
   /* Reward tracking */
   double recent_rewards[MAB_WINDOW_SIZE];
@@ -143,6 +165,15 @@ bool are_vectors_orthogonal(const mutation_vector_t *v1,
 
 /* Initialize MAB selector */
 void mab_init(mab_selector_t *mab, u32 strategy_type);
+
+/* Initialize UCB heap */
+void ucb_heap_init(ucb_heap_t *heap);
+
+/* Heap operations for priority queue */
+void ucb_heap_insert(ucb_heap_t *heap, u32 arm_index, double ucb_value);
+void ucb_heap_update(ucb_heap_t *heap, u32 heap_index, double new_ucb_value, mab_arm_t *arms);
+u32 ucb_heap_peek_max(ucb_heap_t *heap);
+void ucb_heap_rebuild(mab_selector_t *mab);
 
 /* Update MAB arm reward */
 void mab_update_reward(mab_selector_t *mab, u32 arm_index, double reward);
