@@ -48,5 +48,11 @@ int main() {
         printf("附加情况D：X 和 Y 都是奇数\n");
     }
 
+    if (X == 0 && Y == 0) {
+        // 使用 abort() 触发 SIGABRT，这是最可靠的崩溃方式
+        // AFL++ 可以检测到 SIGABRT、SIGSEGV、SIGFPE 等信号
+        abort();
+    }
+
     return 0;
 }
