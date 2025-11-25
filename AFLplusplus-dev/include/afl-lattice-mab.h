@@ -30,7 +30,7 @@ typedef struct afl_state afl_state_t;
 /* Note: MUT_MAX is defined in afl-mutations.h, but we avoid including it here
    to prevent circular dependencies. The value 37 matches MUT_MAX. */
 #define LATTICE_DIMENSION 37  /* Number of mutation types (MUT_MAX) */
-#define MAB_ALPHA 0.005       /* UCB exploration parameter (reduced to favor exploitation) */
+#define MAB_ALPHA 0.004       /* UCB exploration parameter (reduced to favor exploitation) */
 #define MAB_EPSILON 0.02      /* Epsilon-greedy parameter (reduced to favor exploitation) */
 #define LATTICE_NEIGHBOR_RADIUS 3  /* Radius for nearest neighbor search */
 #define MAB_WINDOW_SIZE 1000  /* Window size for reward tracking */
