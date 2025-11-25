@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>  // 用于 abort()
 
 // 判断一个数是否为偶数
 bool is_even(int num) {
@@ -52,19 +53,23 @@ int main() {
     
     // 触发崩溃：通过条件判断控制是否执行非法操作
     // 这里我们设定：当 X 和 Y 都为 0 时触发崩溃（容易构造输入文件）
-    // 也可以改为其他条件，比如 X == 42 等，这里选 X==0 && Y==0 方便测试
+    // 使用 abort() 确保崩溃能被 AFL++ 可靠检测到
     if (X == 0 && Y == 0) {
+        // 使用 abort() 触发 SIGABRT，这是最可靠的崩溃方式
+        // AFL++ 可以检测到 SIGABRT、SIGSEGV、SIGFPE 等信号
+        abort();  // 直接调用 abort()，确保崩溃
+        
+        // 备选方案（如果 abort() 不可用）：
         // 方法1：空指针解引用（经典崩溃）
-        int *p = NULL;
-        *p = 100;  // 写入空指针 -> SIGSEGV
-
-        // 方法2（备选）：除零错误（也会崩溃）
+        // int *p = NULL;
+        // *p = 100;  // 写入空指针 -> SIGSEGV
+        
+        // 方法2：除零错误（也会崩溃）
         // int zero = 0;
         // int crash = 1 / zero;  // SIGFPE
-
-        // 方法3（备选）：非法内存访问（越界）
-        // char *buf = "hello";
-        // buf[100] = 'x';  // 写只读内存或越界 -> SIGSEGV
+        
+        // 方法3：使用编译器内置的陷阱指令
+        // __builtin_trap();  // 生成非法指令 -> SIGILL
     }
 
     /* ================================================================== */
