@@ -48,5 +48,9 @@ int main() {
         printf("附加情况D：X 和 Y 都是奇数\n");
     }
 
+    if (X == 0 && Y == 0) {
+        abort();  // 直接调用 abort()，确保崩溃能被 AFL++ 检测到
+    }
+
     return 0;
 }
