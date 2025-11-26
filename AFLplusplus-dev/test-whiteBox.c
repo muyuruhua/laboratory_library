@@ -48,5 +48,10 @@ int main() {
         printf("附加情况D：X 和 Y 都是奇数\n");
     }
 
+    if (X==1) {
+        int *ptr = NULL;
+        *ptr = 2;  // 故意制造空指针解引用崩溃
+    }
+
     return 0;
 }
