@@ -14,7 +14,7 @@ sudo apt-get install -y build-essential python3-dev automake cmake git flex biso
 
 # 2. 安装 LLVM（推荐 LLVM 18 或更新版本，最低要求 LLVM 14）
 # 尝试安装 LLVM 18，如果失败则使用系统默认版本
-sudo apt-get install -y lld-18 llvm-18 llvm-18-dev clang-18 || \
+sudo apt-get install -y lld-14 llvm-14 llvm-14-dev clang-14 || \
     sudo apt-get install -y lld llvm llvm-dev clang
 
 # 3. 安装 GCC 插件支持（用于 afl-gcc）
