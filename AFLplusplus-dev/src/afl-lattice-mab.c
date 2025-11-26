@@ -139,13 +139,17 @@ void init_mutation_lattice(mutation_lattice_t *lattice) {
   
   /* Calculate lattice density */
   u32 neighbor_count = 0;
-  for (u32 i = 0; i < LATTICE_DIMENSION; ++i) {
+  if (lattice->neighbor_matrix) {
     
-    for (u32 j = 0; j < LATTICE_DIMENSION; ++j) {
+    for (u32 i = 0; i < LATTICE_DIMENSION; ++i) {
       
-      if (lattice->neighbor_matrix[i * LATTICE_DIMENSION + j]) {
+      for (u32 j = 0; j < LATTICE_DIMENSION; ++j) {
         
-        neighbor_count++;
+        if (lattice->neighbor_matrix[i * LATTICE_DIMENSION + j]) {
+          
+          neighbor_count++;
+          
+        }
         
       }
       
@@ -190,6 +194,8 @@ void find_lattice_neighbors(const mutation_lattice_t *lattice,
   *found = 0;
   
   /* Use neighbor matrix for fast lookup */
+  if (!lattice->neighbor_matrix) { return; }
+  
   u32 vec_idx = vector->mutation_type;
   if (vec_idx >= LATTICE_DIMENSION) { return; }
   
