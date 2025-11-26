@@ -144,14 +144,15 @@ void afl_state_init(afl_state_t *afl, uint32_t map_size) {
   if (afl->lattice_mab_ctx) {
     
     lattice_mab_init(afl->lattice_mab_ctx, afl);
-    /* Enable by default, can be controlled via environment variable */
+    /* Enable only if explicitly set via environment variable */
+    /* Default is disabled to allow comparison with original strategy */
     if (getenv("AFL_LATTICE_MAB")) {
       
       afl->lattice_mab_ctx->enabled = (atoi(getenv("AFL_LATTICE_MAB")) != 0);
       
     } else {
       
-      afl->lattice_mab_ctx->enabled = 1;  /* Enabled by default */
+      afl->lattice_mab_ctx->enabled = 0;  /* Disabled by default */
       
     }
     

@@ -283,8 +283,13 @@ run_fuzz_test() {
     local exit_code=0
     if kill -0 $timeout_pid 2>/dev/null; then
         # timeout进程仍在运行，可能是afl-fuzz没有及时响应终止信号
-        # 先等待一下，给timeout时间清理子进程
-        sleep 2
+        # 先等待一下，给timeout时间清理子进程（最多等待3秒）
+        local cleanup_wait=0
+        while kill -0 $timeout_pid 2>/dev/null && [ $cleanup_wait -lt 3 ]; do
+            sleep 1
+            cleanup_wait=$((cleanup_wait + 1))
+        done
+        
         if kill -0 $timeout_pid 2>/dev/null; then
             # 如果仍然在运行，说明可能卡住了，需要强制终止
             kill -TERM $timeout_pid 2>/dev/null || true
