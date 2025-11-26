@@ -127,3 +127,10 @@ utils/plot_ui/afl-plot-ui
 vuln_prog
 argv_fuzz_demo
 argv_fuzz_persistent_demo
+# Test results and build artifacts
+build_whitebox_test/
+build_test/
+build_quick_test/
+multiple_test_results/
+*.nfs*
+.nfs*
