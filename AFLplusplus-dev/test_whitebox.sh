@@ -257,12 +257,12 @@ run_fuzz_test() {
     # 设置执行超时为 1000ms（1秒），避免单个测试用例执行时间过长导致卡住
     timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -S "$fuzzer_id" -m none -t 1000 \
         -- "$TARGET_BINARY" > "$RESULTS_DIR/${strategy_name}.log" 2>&1 &
-    local fuzz_pid=$!
+    local timeout_pid=$!
     
     # 等待几秒，检查是否正常启动
     sleep 3
-    if ! kill -0 $fuzz_pid 2>/dev/null; then
-        echo -e "  ${RED}错误: afl-fuzz 进程已退出${NC}"
+    if ! kill -0 $timeout_pid 2>/dev/null; then
+        echo -e "  ${RED}错误: timeout/afl-fuzz 进程已退出${NC}"
         if [ -f "$RESULTS_DIR/${strategy_name}.log" ]; then
             echo "  错误日志:"
             tail -30 "$RESULTS_DIR/${strategy_name}.log" | sed 's/^/    /'
@@ -270,31 +270,42 @@ run_fuzz_test() {
         return 1
     fi
     
-    # 等待完成（使用超时保护，避免无限等待）
-    local wait_timeout=$((TEST_TIME + 10))  # 比测试时间多10秒
+    # 等待timeout进程完成（timeout会自动在指定时间后终止afl-fuzz）
+    # 等待时间比测试时间多5秒，给timeout足够时间清理
+    local wait_timeout=$((TEST_TIME + 5))
     local waited=0
-    while kill -0 $fuzz_pid 2>/dev/null && [ $waited -lt $wait_timeout ]; do
+    while kill -0 $timeout_pid 2>/dev/null && [ $waited -lt $wait_timeout ]; do
         sleep 1
         waited=$((waited + 1))
     done
     
     # 获取退出码
     local exit_code=0
-    if kill -0 $fuzz_pid 2>/dev/null; then
-        # 如果timeout进程仍在运行（不应该发生），强制终止
-        echo -e "  ${YELLOW}警告: timeout进程仍在运行，强制终止...${NC}"
-        kill -9 $fuzz_pid 2>/dev/null || true
-        wait $fuzz_pid 2>/dev/null || true
+    if kill -0 $timeout_pid 2>/dev/null; then
+        # timeout进程仍在运行，可能是afl-fuzz没有及时响应终止信号
+        # 先等待一下，给timeout时间清理子进程
+        sleep 2
+        if kill -0 $timeout_pid 2>/dev/null; then
+            # 如果仍然在运行，说明可能卡住了，需要强制终止
+            kill -TERM $timeout_pid 2>/dev/null || true
+            sleep 1
+            if kill -0 $timeout_pid 2>/dev/null; then
+                # 如果TERM信号无效，使用KILL
+                kill -9 $timeout_pid 2>/dev/null || true
+            fi
+        fi
+        wait $timeout_pid 2>/dev/null || true
         exit_code=124
     else
         # 等待timeout进程结束并获取退出码
-        wait $fuzz_pid 2>/dev/null
+        wait $timeout_pid 2>/dev/null
         exit_code=$?
     fi
     
-    # 退出码124是timeout命令的正常退出码（表示afl-fuzz被timeout终止），不需要警告
+    # 退出码124是timeout命令的正常退出码（表示afl-fuzz被timeout终止），这是正常的
+    # 其他非零退出码可能是afl-fuzz本身的错误
     if [ $exit_code -ne 0 ] && [ $exit_code -ne 124 ]; then
-        echo -e "  ${YELLOW}警告: timeout命令异常退出，退出码: $exit_code${NC}"
+        echo -e "  ${YELLOW}警告: afl-fuzz异常退出，退出码: $exit_code${NC}"
         if [ -f "$RESULTS_DIR/${strategy_name}.log" ]; then
             echo "  错误日志:"
             tail -30 "$RESULTS_DIR/${strategy_name}.log" | sed 's/^/    /'
