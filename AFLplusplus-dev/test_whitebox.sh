@@ -232,30 +232,23 @@ run_fuzz_test() {
     fi
     mkdir -p "$output_dir"
     
-    # 设置环境变量
-    if [ "$use_lattice_mab" = "1" ]; then
-        export AFL_LATTICE_MAB=1
-    else
-        unset AFL_LATTICE_MAB
-    fi
-    
-    # 运行 afl-fuzz
+    # 设置环境变量（在运行命令时显式传递，确保正确传递到子进程）
     # 注意：test-whiteBox.c 从标准输入读取，AFL++ 会自动将测试用例文件内容传递给标准输入
     echo "  运行时间: ${TEST_TIME}秒..."
     
-    # 设置 AFL++ 环境变量
-    export AFL_SKIP_CPUFREQ=1
-    # 跳过 CPU 绑定检查，避免在虚拟化环境中扫描 /proc 目录时卡住
-    export AFL_NO_AFFINITY=1
-    # 允许在 core_pattern 配置不理想的情况下运行（用于测试环境）
-    export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
-    # 减少输出（可选，如果需要更多调试信息可以注释掉）
-    export AFL_QUIET=1
+    # 构建环境变量字符串，在运行命令时显式传递
+    local env_vars="AFL_SKIP_CPUFREQ=1 AFL_NO_AFFINITY=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_QUIET=1"
+    if [ "$use_lattice_mab" = "1" ]; then
+        env_vars="$env_vars AFL_LATTICE_MAB=1"
+    else
+        env_vars="$env_vars AFL_LATTICE_MAB=0"
+    fi
     
     # 运行 afl-fuzz（后台运行）
     # 使用 -S 参数指定唯一的 fuzzer ID，避免多次运行时的目录冲突
     # 设置执行超时为 1000ms（1秒），避免单个测试用例执行时间过长导致卡住
-    timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -S "$fuzzer_id" -m none -t 1000 \
+    # 使用 env 命令显式传递环境变量，确保正确传递到子进程
+    env $env_vars timeout ${TEST_TIME}s "$AFL_FUZZ" -i "$TESTCASES_DIR" -o "$output_dir" -S "$fuzzer_id" -m none -t 1000 \
         -- "$TARGET_BINARY" > "$RESULTS_DIR/${strategy_name}.log" 2>&1 &
     local timeout_pid=$!
     
@@ -292,6 +285,58 @@ run_fuzz_test() {
         
         if kill -0 $timeout_pid 2>/dev/null; then
             # 如果仍然在运行，说明可能卡住了，需要强制终止
+            # 先尝试找到并终止所有子进程（afl-fuzz 及其子进程）
+            # 使用 pstree 或 ps 来查找所有子进程（更可靠的方法）
+            local child_pids=""
+            if command -v pstree >/dev/null 2>&1; then
+                # 使用 pstree 查找所有子进程
+                child_pids=$(pstree -p $timeout_pid 2>/dev/null | grep -oP '\(\K[0-9]+' | grep -v "^${timeout_pid}$" || true)
+            elif command -v pgrep >/dev/null 2>&1; then
+                # 使用 pgrep 查找直接子进程
+                child_pids=$(pgrep -P $timeout_pid 2>/dev/null || true)
+            else
+                # 使用 ps 查找子进程
+                child_pids=$(ps -o pid --no-headers --ppid $timeout_pid 2>/dev/null | tr -d ' ' || true)
+            fi
+            
+            if [ -n "$child_pids" ]; then
+                echo "  警告: timeout进程仍在运行，强制终止子进程..."
+                # 递归终止所有子进程
+                for pid in $child_pids; do
+                    # 先终止该进程的所有子进程
+                    local grandchild_pids=""
+                    if command -v pgrep >/dev/null 2>&1; then
+                        grandchild_pids=$(pgrep -P $pid 2>/dev/null || true)
+                    else
+                        grandchild_pids=$(ps -o pid --no-headers --ppid $pid 2>/dev/null | tr -d ' ' || true)
+                    fi
+                    for gpid in $grandchild_pids; do
+                        kill -TERM $gpid 2>/dev/null || true
+                    done
+                    # 然后终止该进程
+                    kill -TERM $pid 2>/dev/null || true
+                done
+                sleep 1
+                # 如果TERM无效，使用KILL
+                for pid in $child_pids; do
+                    if kill -0 $pid 2>/dev/null; then
+                        kill -9 $pid 2>/dev/null || true
+                    fi
+                    # 也检查并终止孙子进程
+                    local grandchild_pids=""
+                    if command -v pgrep >/dev/null 2>&1; then
+                        grandchild_pids=$(pgrep -P $pid 2>/dev/null || true)
+                    else
+                        grandchild_pids=$(ps -o pid --no-headers --ppid $pid 2>/dev/null | tr -d ' ' || true)
+                    fi
+                    for gpid in $grandchild_pids; do
+                        if kill -0 $gpid 2>/dev/null; then
+                            kill -9 $gpid 2>/dev/null || true
+                        fi
+                    done
+                done
+            fi
+            # 终止timeout进程本身
             kill -TERM $timeout_pid 2>/dev/null || true
             sleep 1
             if kill -0 $timeout_pid 2>/dev/null; then
