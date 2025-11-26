@@ -2240,8 +2240,9 @@ havoc_stage:
         selected_mutation = lattice_mab_select_mutation(afl->lattice_mab_ctx, afl,
                                                        afl->input_mode, afl->fuzz_mode);
         
-        /* If lattice-MAB returned 0, fallback to original strategy */
-        if (selected_mutation == 0 || selected_mutation >= MUT_MAX) {
+        /* If lattice-MAB returned MUT_MAX or invalid value, fallback to original strategy */
+        /* Note: MUT_FLIPBIT=0 is a valid mutation type, so we only check >= MUT_MAX */
+        if (selected_mutation >= MUT_MAX) {
           
           r = rand_below(afl, rand_max);
           selected_mutation = mutation_array[r];

@@ -907,7 +907,7 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
     
     /* Fallback to original strategy */
     if (ctx) { ctx->original_selections++; }
-    return 0;  /* Will trigger original selection */
+    return MUT_MAX;  /* Return MUT_MAX to trigger original selection (not 0, since MUT_FLIPBIT=0) */
     
   }
   
