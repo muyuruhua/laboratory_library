@@ -41,6 +41,14 @@ typedef struct afl_state afl_state_t;
 #define EFFICIENCY_REWARD_WEIGHT 30.0  /* Balanced weight for efficiency reward */
 #define COVERAGE_REWARD_WEIGHT 15.0  /* Increased weight for direct coverage gain */
 
+/* Semantic-aware and Grammar-aware configuration */
+#define SEMANTIC_AWARE_ENABLED 1  /* Enable semantic-aware mutation selection */
+#define GRAMMAR_AWARE_ENABLED 1   /* Enable grammar-aware mutation selection */
+#define SEMANTIC_PRECISION_BOOST 1.5  /* Boost factor for precision-generating mutations */
+#define GRAMMAR_MATCH_BOOST 1.3  /* Boost factor for grammar-matching mutations */
+#define ARITHMETIC_MUTATION_WEIGHT 1.8  /* Weight for arithmetic mutations (for precise values) */
+#define ASCII_MUTATION_WEIGHT 1.5  /* Weight for ASCII-related mutations (for text inputs) */
+
 /* Mutation Vector Structure */
 typedef struct {
 
@@ -115,6 +123,27 @@ typedef struct {
   
 } mab_selector_t;
 
+/* Semantic-aware context: tracks conditions and precision requirements */
+typedef struct {
+  
+  u32 condition_detected;     /* Flag: condition branch detected (e.g., X==1) */
+  u32 precision_required;      /* Flag: precise value generation needed */
+  u32 arithmetic_preference;  /* Preference for arithmetic mutations */
+  u64 condition_count;        /* Number of condition branches encountered */
+  
+} semantic_context_t;
+
+/* Grammar-aware context: tracks input format and structure */
+typedef struct {
+  
+  u32 input_mode;             /* 0=default, 1=text, 2=binary */
+  u32 text_preference;        /* Preference for text-related mutations */
+  u32 binary_preference;      /* Preference for binary-related mutations */
+  u32 ascii_detected;         /* Flag: ASCII input detected */
+  u32 structure_detected;     /* Flag: structured input detected */
+  
+} grammar_context_t;
+
 /* Lattice-MAB Context */
 struct lattice_mab_context {
 
@@ -122,6 +151,10 @@ struct lattice_mab_context {
   mab_selector_t mab;
   bool enabled;               /* Whether to use lattice-MAB strategy */
   bool use_original_fallback; /* Fallback to original strategy if needed */
+  
+  /* Semantic and Grammar awareness */
+  semantic_context_t semantic_ctx;
+  grammar_context_t grammar_ctx;
   
   /* Statistics */
   u64 lattice_selections;
@@ -197,6 +230,22 @@ void lattice_mab_update(lattice_mab_context_t *ctx, u32 mutation_type,
 void lattice_mab_get_stats(const lattice_mab_context_t *ctx,
                           u64 *lattice_sel, u64 *original_sel,
                           double *avg_reward);
+
+/* Semantic-aware functions */
+void semantic_context_init(semantic_context_t *ctx);
+void semantic_context_update(semantic_context_t *ctx, afl_state_t *afl);
+double get_semantic_boost(u32 mutation_type, const semantic_context_t *ctx);
+
+/* Grammar-aware functions */
+void grammar_context_init(grammar_context_t *ctx, u32 input_mode);
+void grammar_context_update(grammar_context_t *ctx, afl_state_t *afl, u32 input_mode);
+double get_grammar_boost(u32 mutation_type, const grammar_context_t *ctx, u32 input_mode);
+
+/* Check if mutation is suitable for semantic precision */
+bool is_precision_mutation(u32 mutation_type);
+
+/* Check if mutation is suitable for grammar/format */
+bool is_grammar_mutation(u32 mutation_type, u32 input_mode);
 
 #endif /* AFL_LATTICE_MAB_H */
 

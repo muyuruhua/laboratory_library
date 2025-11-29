@@ -809,11 +809,10 @@ u32 mab_select_mutation(mab_selector_t *mab, afl_state_t *afl) {
   
 }
 
-/* Calculate reward for a mutation based on coverage gain and efficiency */
+/* Calculate reward for a mutation based on coverage gain, efficiency, semantic and grammar awareness */
 double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
                                 u32 new_edges, u32 new_paths) {
 
-  (void)mutation_type;  /* Suppress unused parameter warning */
   if (!afl) { return 0.0; }
   
   /* Base reward from new coverage (increased weight to emphasize coverage discovery) */
@@ -849,6 +848,54 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
       
       /* Moderate bonus for unexplored mutations to encourage exploration */
       reward += 0.5;  /* Reduced to favor exploitation over exploration */
+      
+    }
+    
+    /* Semantic-aware bonus: reward mutations that match semantic requirements */
+    if (SEMANTIC_AWARE_ENABLED) {
+      
+      semantic_context_t *sem_ctx = &afl->lattice_mab_ctx->semantic_ctx;
+      if (sem_ctx->precision_required || sem_ctx->arithmetic_preference) {
+        
+        if (is_precision_mutation(mutation_type)) {
+          
+          /* Bonus for precision-generating mutations when precision is needed */
+          reward += 5.0 * SEMANTIC_PRECISION_BOOST;
+          
+        }
+        
+      }
+      
+      if (sem_ctx->condition_detected) {
+        
+        if (is_precision_mutation(mutation_type)) {
+          
+          /* Bonus for mutations that can satisfy conditions */
+          reward += 3.0 * SEMANTIC_PRECISION_BOOST;
+          
+        }
+        
+      }
+      
+    }
+    
+    /* Grammar-aware bonus: reward mutations that match input format */
+    if (GRAMMAR_AWARE_ENABLED) {
+      
+      grammar_context_t *gram_ctx = &afl->lattice_mab_ctx->grammar_ctx;
+      if (is_grammar_mutation(mutation_type, gram_ctx->input_mode)) {
+        
+        /* Bonus for format-matching mutations */
+        reward += 3.0 * GRAMMAR_MATCH_BOOST;
+        
+      }
+      
+      if (gram_ctx->structure_detected && is_precision_mutation(mutation_type)) {
+        
+        /* Extra bonus for structured inputs (e.g., "X Y" format) */
+        reward += 2.0 * ARITHMETIC_MUTATION_WEIGHT;
+        
+      }
       
     }
     
@@ -897,12 +944,10 @@ double calculate_mutation_reward(afl_state_t *afl, u32 mutation_type,
   
 }
 
-/* Select mutation using lattice properties + MAB */
+/* Select mutation using lattice properties + MAB + Semantic + Grammar awareness */
 u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
                                u32 input_mode, u32 fuzz_mode) {
 
-  (void)input_mode;  /* Suppress unused parameter warning */
-  (void)fuzz_mode;   /* Suppress unused parameter warning */
   if (!ctx || !afl || !ctx->enabled) {
     
     /* Fallback to original strategy */
@@ -914,15 +959,24 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
   ctx->lattice_selections++;
   ctx->total_mutations++;
   
+  /* Update semantic and grammar contexts */
+  semantic_context_update(&ctx->semantic_ctx, afl);
+  grammar_context_update(&ctx->grammar_ctx, afl, input_mode);
+  
   /* Use MAB to select base mutation */
   u32 base_mutation = mab_select_mutation(&ctx->mab, afl);
+  
+  /* Apply semantic and grammar awareness: boost suitable mutations */
+  double semantic_boost = get_semantic_boost(base_mutation, &ctx->semantic_ctx);
+  double grammar_boost = get_grammar_boost(base_mutation, &ctx->grammar_ctx, input_mode);
+  double combined_boost = semantic_boost * grammar_boost;
   
   /* Apply lattice-based refinement (only if we have enough data) */
   mutation_vector_t *selected_vec = &ctx->lattice.vectors[base_mutation];
   
   /* Skip neighbor exploration if base mutation is efficient (to save computation) */
   u32 best_mutation = base_mutation;
-  double best_reward = ctx->mab.arms[base_mutation].avg_reward;
+  double best_reward = ctx->mab.arms[base_mutation].avg_reward * combined_boost;
   
   /* Explore neighbors less frequently to save executions */
   bool should_explore_neighbors = false;
@@ -961,6 +1015,12 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
         
         double neighbor_reward = ctx->mab.arms[neighbor_idx].avg_reward;
         
+        /* Apply semantic and grammar boosts to neighbor */
+        double neighbor_semantic_boost = get_semantic_boost(neighbor_idx, &ctx->semantic_ctx);
+        double neighbor_grammar_boost = get_grammar_boost(neighbor_idx, &ctx->grammar_ctx, input_mode);
+        double neighbor_combined_boost = neighbor_semantic_boost * neighbor_grammar_boost;
+        neighbor_reward *= neighbor_combined_boost;
+        
         /* Calculate neighbor efficiency for comparison */
         mutation_vector_t *neighbor_vec = &ctx->lattice.vectors[neighbor_idx];
         double neighbor_efficiency = 0.0;
@@ -978,8 +1038,15 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
         }
         
         /* Prefer neighbors with significantly better rewards or efficiency */
+        /* Also prefer neighbors that match semantic/grammar requirements */
+        bool semantic_match = is_precision_mutation(neighbor_idx) && 
+                            (ctx->semantic_ctx.precision_required || ctx->semantic_ctx.arithmetic_preference);
+        bool grammar_match = is_grammar_mutation(neighbor_idx, input_mode);
+        
         if (neighbor_reward > best_reward * 1.2 || 
-            (neighbor_efficiency > base_efficiency * 1.1 && neighbor_reward >= best_reward * 1.1)) {
+            (neighbor_efficiency > base_efficiency * 1.1 && neighbor_reward >= best_reward * 1.1) ||
+            (semantic_match && neighbor_reward >= best_reward * 1.1) ||
+            (grammar_match && neighbor_reward >= best_reward * 1.1)) {
           
           /* Reduced exploration probability to save executions */
           if (rand_below(afl, 100) < NEIGHBOR_EXPLORE_PROB) {
@@ -990,7 +1057,9 @@ u32 lattice_mab_select_mutation(lattice_mab_context_t *ctx, afl_state_t *afl,
           }
           
         } else if (neighbor_reward > best_reward * 1.5 || 
-                   (neighbor_efficiency > base_efficiency * 1.2 && neighbor_reward >= best_reward * 1.2)) {
+                   (neighbor_efficiency > base_efficiency * 1.2 && neighbor_reward >= best_reward * 1.2) ||
+                   (semantic_match && neighbor_reward >= best_reward * 1.3) ||
+                   (grammar_match && neighbor_reward >= best_reward * 1.3)) {
           
           /* For very significant improvements, switch */
           best_mutation = neighbor_idx;
@@ -1048,6 +1117,10 @@ void lattice_mab_init(lattice_mab_context_t *ctx, afl_state_t *afl) {
   /* Initialize MAB (use UCB strategy) */
   mab_init(&ctx->mab, 0);
   
+  /* Initialize semantic and grammar contexts */
+  semantic_context_init(&ctx->semantic_ctx);
+  grammar_context_init(&ctx->grammar_ctx, afl->input_mode);
+  
 }
 
 /* Cleanup lattice-MAB system */
@@ -1076,6 +1149,236 @@ void lattice_mab_get_stats(const lattice_mab_context_t *ctx,
   if (lattice_sel) { *lattice_sel = ctx->lattice_selections; }
   if (original_sel) { *original_sel = ctx->original_selections; }
   if (avg_reward) { *avg_reward = ctx->mab.avg_recent_reward; }
+  
+}
+
+/* ============================================================================
+   Semantic-Aware Functions: Understand program semantics for precise input generation
+   ============================================================================ */
+
+/* Initialize semantic context */
+void semantic_context_init(semantic_context_t *ctx) {
+  
+  if (!ctx) { return; }
+  memset(ctx, 0, sizeof(semantic_context_t));
+  
+}
+
+/* Update semantic context based on program state */
+void semantic_context_update(semantic_context_t *ctx, afl_state_t *afl) {
+  
+  if (!ctx || !afl) { return; }
+  
+  /* Detect conditions that require precise values */
+  /* If we're in exploration mode and haven't found crashes, likely need precision */
+  if (afl->fuzz_mode == 0 && afl->saved_crashes == 0) {
+    
+    ctx->precision_required = 1;
+    ctx->arithmetic_preference = 1;
+    
+  }
+  
+  /* If we've encountered many branches but low coverage, likely need precision */
+  if (afl->queued_items > 10 && afl->queued_items < 50) {
+    
+    ctx->condition_detected = 1;
+    ctx->condition_count++;
+    
+  }
+  
+}
+
+/* Check if mutation is suitable for generating precise values */
+bool is_precision_mutation(u32 mutation_type) {
+  
+  /* Arithmetic mutations are good for precise value generation */
+  if (mutation_type == MUT_ARITH8 || mutation_type == MUT_ARITH8_ ||
+      mutation_type == MUT_ARITH16 || mutation_type == MUT_ARITH16_ ||
+      mutation_type == MUT_ARITH32 || mutation_type == MUT_ARITH32_ ||
+      mutation_type == MUT_ARITH16BE || mutation_type == MUT_ARITH16BE_ ||
+      mutation_type == MUT_ARITH32BE || mutation_type == MUT_ARITH32BE_ ||
+      mutation_type == MUT_BYTEADD || mutation_type == MUT_BYTESUB) {
+    
+    return true;
+    
+  }
+  
+  /* Interesting value mutations can also generate precise values */
+  if (mutation_type == MUT_INTERESTING8 || mutation_type == MUT_INTERESTING16 ||
+      mutation_type == MUT_INTERESTING32 || mutation_type == MUT_INTERESTING16BE ||
+      mutation_type == MUT_INTERESTING32BE) {
+    
+    return true;
+    
+  }
+  
+  return false;
+  
+}
+
+/* Get semantic boost for a mutation type */
+double get_semantic_boost(u32 mutation_type, const semantic_context_t *ctx) {
+  
+  if (!ctx || !SEMANTIC_AWARE_ENABLED) { return 1.0; }
+  
+  double boost = 1.0;
+  
+  /* If precision is required, boost arithmetic mutations */
+  if (ctx->precision_required || ctx->arithmetic_preference) {
+    
+    if (is_precision_mutation(mutation_type)) {
+      
+      boost *= SEMANTIC_PRECISION_BOOST;
+      
+    }
+    
+  }
+  
+  /* If conditions detected, prefer mutations that can generate specific values */
+  if (ctx->condition_detected) {
+    
+    if (is_precision_mutation(mutation_type)) {
+      
+      boost *= SEMANTIC_PRECISION_BOOST;
+      
+    }
+    
+  }
+  
+  return boost;
+  
+}
+
+/* ============================================================================
+   Grammar-Aware Functions: Understand input format for valid input generation
+   ============================================================================ */
+
+/* Initialize grammar context */
+void grammar_context_init(grammar_context_t *ctx, u32 input_mode) {
+  
+  if (!ctx) { return; }
+  memset(ctx, 0, sizeof(grammar_context_t));
+  ctx->input_mode = input_mode;
+  
+}
+
+/* Update grammar context based on input characteristics */
+void grammar_context_update(grammar_context_t *ctx, afl_state_t *afl, u32 input_mode) {
+  
+  if (!ctx || !afl) { return; }
+  
+  ctx->input_mode = input_mode;
+  
+  /* Detect text input characteristics */
+  if (input_mode == 1) {  /* TEXT mode */
+    
+    ctx->text_preference = 1;
+    ctx->ascii_detected = 1;
+    
+  } else if (input_mode == 2) {  /* BINARY mode */
+    
+    ctx->binary_preference = 1;
+    
+  }
+  
+  /* Check if input appears structured (e.g., has delimiters, patterns) */
+  if (afl->queue_cur && afl->queue_cur->len > 0) {
+    
+    u8 *buf = queue_testcase_get(afl, afl->queue_cur);
+    if (buf) {
+      
+      u32 space_count = 0;
+      u32 digit_count = 0;
+      for (u32 i = 0; i < afl->queue_cur->len && i < 100; ++i) {
+        
+        if (buf[i] == ' ' || buf[i] == '\t') { space_count++; }
+        if (buf[i] >= '0' && buf[i] <= '9') { digit_count++; }
+        
+      }
+      
+      /* If input has spaces and digits, likely structured (e.g., "X Y" format) */
+      if (space_count > 0 && digit_count > 0) {
+        
+        ctx->structure_detected = 1;
+        
+      }
+      
+    }
+    
+  }
+  
+}
+
+/* Check if mutation is suitable for grammar/format */
+bool is_grammar_mutation(u32 mutation_type, u32 input_mode) {
+  
+  /* For text inputs, prefer ASCII-related mutations */
+  if (input_mode == 1) {  /* TEXT */
+    
+    if (mutation_type == MUT_ASCIINUM || mutation_type == MUT_INSERTASCIINUM ||
+        mutation_type == MUT_BYTEADD || mutation_type == MUT_BYTESUB ||
+        mutation_type == MUT_ARITH8 || mutation_type == MUT_ARITH8_) {
+      
+      return true;
+      
+    }
+    
+  }
+  
+  /* For binary inputs, prefer binary-related mutations */
+  if (input_mode == 2) {  /* BINARY */
+    
+    if (mutation_type == MUT_FLIPBIT || mutation_type == MUT_FLIP8 ||
+        mutation_type == MUT_INTERESTING8 || mutation_type == MUT_INTERESTING16 ||
+        mutation_type == MUT_INTERESTING32) {
+      
+      return true;
+      
+    }
+    
+  }
+  
+  return false;
+  
+}
+
+/* Get grammar boost for a mutation type */
+double get_grammar_boost(u32 mutation_type, const grammar_context_t *ctx, u32 input_mode) {
+  
+  if (!ctx || !GRAMMAR_AWARE_ENABLED) { return 1.0; }
+  
+  double boost = 1.0;
+  
+  /* Boost mutations that match input format */
+  if (is_grammar_mutation(mutation_type, input_mode)) {
+    
+    boost *= GRAMMAR_MATCH_BOOST;
+    
+  }
+  
+  /* Additional boost for text inputs with ASCII mutations */
+  if (ctx->text_preference && ctx->ascii_detected) {
+    
+    if (mutation_type == MUT_ASCIINUM || mutation_type == MUT_INSERTASCIINUM) {
+      
+      boost *= ASCII_MUTATION_WEIGHT;
+      
+    }
+    
+  }
+  
+  /* Additional boost for structured inputs with arithmetic mutations */
+  if (ctx->structure_detected) {
+    
+    if (is_precision_mutation(mutation_type)) {
+      
+      boost *= ARITHMETIC_MUTATION_WEIGHT;
+      
+    }
+    
+  }
+  
+  return boost;
   
 }
 
